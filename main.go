@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/caoyingjunz/kubez-autoscaler/controllers"
+	"github.com/caoyingjunz/kubez-autoscaler/handlers"
 )
 
 var (
@@ -74,11 +75,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controllers.DeploymentReconciler{
-		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("Deployment"),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	// Fetch the kubernetes clientSet
+	clientSet := mgr.GetClient()
+
+	if err = controllers.NewDeploymentReconciler(
+		clientSet,
+		ctrl.Log.WithName("controllers").WithName("Deployment"),
+		mgr.GetScheme(),
+		handlers.NewHPAHandler(clientSet),
+	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Deployment")
 		os.Exit(1)
 	}
