@@ -26,20 +26,36 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/caoyingjunz/kubez-autoscaler/handlers"
 )
 
-// DeploymentReconcilerreconciles a Deployment object
+func NewDeploymentReconciler(
+	client client.Client,
+	log logr.Logger,
+	scheme *runtime.Scheme,
+	handler *handlers.HPAHandler) *DeploymentReconciler {
+	return &DeploymentReconciler{
+		client:  client,
+		log:     log,
+		scheme:  scheme,
+		handler: handler,
+	}
+}
+
+// DeploymentReconciler reconciles a Deployment object
 type DeploymentReconciler struct {
-	client.Client
-	Log    logr.Logger
-	Scheme *runtime.Scheme
+	client  client.Client
+	log     logr.Logger
+	scheme  *runtime.Scheme
+	handler *handlers.HPAHandler
 }
 
 func (r *DeploymentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = r.Log.WithValues("kubez", req.NamespacedName)
+	_ = r.log.WithValues("kubez", req.NamespacedName)
 
 	deployment := &appsv1.Deployment{}
-	err := r.Get(context.TODO(), req.NamespacedName, deployment)
+	err := r.client.Get(context.TODO(), req.NamespacedName, deployment)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -53,7 +69,7 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	// TODO
-	fmt.Println(deployment.Namespace)
+	fmt.Println(deployment.Name)
 
 	return ctrl.Result{}, nil
 }
