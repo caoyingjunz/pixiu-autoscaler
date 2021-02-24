@@ -26,6 +26,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/caoyingjunz/kubez-autoscaler/handlers"
 )
 
 // DeploymentReconcilerreconciles a Deployment object
@@ -33,6 +35,7 @@ type DeploymentReconciler struct {
 	client.Client
 	Log    logr.Logger
 	Scheme *runtime.Scheme
+	Handler *handlers.HPAHandler
 }
 
 func (r *DeploymentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
