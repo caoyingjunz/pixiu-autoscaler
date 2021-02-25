@@ -18,6 +18,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"k8s.io/api/autoscaling/v2beta2"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -40,7 +41,41 @@ type HPAHandler struct {
 	kas    KubezAutoscaler
 }
 
-func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types.NamespacedName, annotations map[string]string) error {
+func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types.NamespacedName, handlerType HandlerType, annotations map[string]string) error {
+
+	hpa := &v2beta2.HorizontalPodAutoscaler{}
+	err := h.client.Get(context.TODO(), namespacedName, hpa)
+	if err == nil {
+		if handlerType != Delete {
+			handlerType = Update
+		}
+	} else {
+		if !errors.IsNotFound(err) {
+			if handlerType != Delete {
+				handlerType = Create
+			}
+		} else {
+			return err
+		}
+	}
+
+	switch handlerType {
+	case Delete:
+		// Delete HPA
+		// TODO: 需要判断 hpa 是否属于 deployment
+		if err := h.client.Delete(context.TODO(), hpa); err != nil {
+			return err
+		}
+	case Create:
+		// Create HPA
+		fmt.Println("create HPA")
+		return nil
+
+	case Update:
+		// Update HPA
+		fmt.Println("update HPA")
+		return nil
+	}
 
 	hpaAnnotations := make(map[string]string)
 	for k, v := range annotations {
@@ -59,23 +94,11 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 		return err
 	}
 
-	var notExist bool
-
-	hpa := &v2beta2.HorizontalPodAutoscaler{}
-	err := h.client.Get(context.TODO(), namespacedName, hpa)
+	newHpa := createHorizontalPodAutoscaler(namespacedName, hpaAnnotations)
+	err = h.client.Create(context.TODO(), newHpa)
 	if err != nil {
-		if !errors.IsNotFound(err) {
-			return err
-		}
-		notExist = true
-	}
+		return err
 
-	if !notExist {
-		hpa := createHorizontalPodAutoscaler(namespacedName, hpaAnnotations)
-		err = h.client.Create(context.TODO(), hpa)
-		if err != nil {
-			return err
-		}
 	}
 	return nil
 }
