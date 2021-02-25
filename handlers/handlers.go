@@ -40,7 +40,7 @@ type HPAHandler struct {
 	kas    KubezAutoscaler
 }
 
-func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types.NamespacedName, annotations map[string]string) error {
+func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types.NamespacedName, annotations map[string]string, handlerType HandlerType) error {
 
 	hpaAnnotations := make(map[string]string)
 	for k, v := range annotations {
