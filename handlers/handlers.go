@@ -18,6 +18,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"k8s.io/api/autoscaling/v2beta2"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -40,7 +41,28 @@ type HPAHandler struct {
 	kas    KubezAutoscaler
 }
 
-func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types.NamespacedName, annotations map[string]string) error {
+func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types.NamespacedName, handlerType HandlerType, annotations map[string]string) error {
+	switch handlerType {
+	case Delete:
+		// Delete HPA
+		hpa := &v2beta2.HorizontalPodAutoscaler{}
+		err := h.client.Get(context.TODO(), namespacedName, hpa)
+		if err != nil {
+			if !errors.IsNotFound(err) {
+				return err
+			}
+			// retrun directly if the hpa not exits
+			return nil
+		}
+		// TODO: 需要判断 hpa 是否属于 deployment
+		if err := h.client.Delete(context.TODO(), hpa); err != nil {
+			return err
+		}
+	default:
+		// Create and Update
+		fmt.Println("Create and Update")
+		return nil
+	}
 
 	hpaAnnotations := make(map[string]string)
 	for k, v := range annotations {
