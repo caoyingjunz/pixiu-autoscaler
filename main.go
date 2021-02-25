@@ -75,15 +75,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Fetch the kubernetes clientSet and scheme
-	clientSet := mgr.GetClient()
+	// Fetch the kubernetes clientset and scheme for deployment
+	clientset := mgr.GetClient()
 	scheme := mgr.GetScheme()
 
 	if err = controllers.NewDeploymentReconciler(
-		clientSet,
+		clientset,
 		ctrl.Log.WithName("controllers").WithName("Deployment"),
 		scheme,
-		handlers.NewHPAHandler(clientSet),
+		handlers.NewHPAHandler(clientset),
 	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Deployment")
 		os.Exit(1)
