@@ -19,9 +19,9 @@ package handlers
 import "fmt"
 
 const (
-	minReplicas                    = "Kubez.autoscaler.minReplicas"
-	maxReplicas                    = "Kubez.autoscaler.maxReplicas"
-	targetCPUUtilizationPercentage = "Kubez.autoscaler.targetCPUUtilizationPercentage"
+	minReplicas                    = "kubez.autoscaler.minReplicas"
+	maxReplicas                    = "kubez.autoscaler.maxReplicas"
+	targetCPUUtilizationPercentage = "kubez.autoscaler.targetCPUUtilizationPercentage"
 )
 
 // Empty
