@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -48,23 +49,21 @@ type DeploymentReconciler struct {
 func (r *DeploymentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = r.log.WithValues("kubez", req.NamespacedName)
 
+	var handlerType handlers.HandlerType
+
 	deployment := &appsv1.Deployment{}
 	err := r.client.Get(context.TODO(), req.NamespacedName, deployment)
-
 	if err != nil {
-		if errors.IsNotFound(err) {
-			// Req object not found, Created objects are automatically garbage collected.
-			// For additional cleanup logic use finalizers.
-			// Return and don't requeue
-			// TODO: Remove the hpa
-			return ctrl.Result{}, nil
+		if !errors.IsNotFound(err) {
+			// Error reading the object - requeue the request.
+			return ctrl.Result{}, err
 		}
-		// Error reading the object - requeue the request.
-		return ctrl.Result{}, err
+		handlerType = handlers.Delete
 	}
 
-	err = r.handler.HandlerAutoscaler(ctx, req.NamespacedName, deployment.Annotations)
+	err = r.handler.HandlerAutoscaler(ctx, req.NamespacedName, handlerType, deployment.Annotations)
 	if err != nil {
+		// requeue the request.
 		return ctrl.Result{}, err
 	}
 
