@@ -43,40 +43,48 @@ type HPAHandler struct {
 }
 
 func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types.NamespacedName, handlerType HandlerType, annotations map[string]string) error {
+	// Set the type to Invaid
+	if handlerType != Delete {
+		handlerType = Invaid
+	}
 
+	// calculate the handler type for HPA
 	hpa := &v2beta2.HorizontalPodAutoscaler{}
 	err := h.client.Get(context.TODO(), namespacedName, hpa)
+
 	if err == nil {
+		// hpa exits，event type may delete or update
 		if handlerType != Delete {
 			handlerType = Update
 		}
-	} else {
-		if !errors.IsNotFound(err) {
-			if handlerType != Delete {
-				handlerType = Create
-			}
-		} else {
-			// TODO
-			return nil
+	}
+	if errors.IsNotFound(err) {
+		if handlerType != Delete {
+			handlerType = Create
 		}
 	}
 
+	// handlers HPA
 	switch handlerType {
-	case Delete:
-		// Delete HPA
-		// TODO: 需要判断 hpa 是否属于 deployment
-		if err := h.client.Delete(context.TODO(), hpa); err != nil {
-			return nil
-		}
 	case Create:
 		// Create HPA
-		fmt.Println("create HPA")
+		fmt.Println("create HPA", namespacedName)
 		return nil
 
 	case Update:
 		// Update HPA
-		fmt.Println("update HPA")
+		fmt.Println("update HPA", namespacedName)
 		return nil
+
+	case Delete:
+		// Delete HPA
+		fmt.Println("delete HPA", namespacedName)
+		// TODO: 需要判断 hpa 是否属于 deployment
+		//if err := h.client.Delete(context.TODO(), hpa); err != nil {
+		//	return nil
+		//}
+	default:
+		return err
 	}
 
 	hpaAnnotations := make(map[string]string)
