@@ -24,12 +24,15 @@ const (
 	targetCPUUtilizationPercentage = "kubez.autoscaler.targetCPUUtilizationPercentage"
 )
 
-type HandlerType string
+const (
+	KubezHpaController = "kubez.hpa.controller"
+)
+
+type ScaleTarget string
 
 const (
-	Create HandlerType = "create"
-	Update HandlerType = "update"
-	Delete HandlerType = "delete"
+	Deployment  ScaleTarget = "Deployment"
+	StatefulSet ScaleTarget = "StatefulSet"
 )
 
 // Empty
