@@ -30,6 +30,8 @@ const (
 	Create HandlerType = "create"
 	Update HandlerType = "update"
 	Delete HandlerType = "delete"
+
+	Invaid HandlerType = "invaid"
 )
 
 // Empty

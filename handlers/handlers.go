@@ -46,6 +46,11 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 
 	hpa := &v2beta2.HorizontalPodAutoscaler{}
 	err := h.client.Get(context.TODO(), namespacedName, hpa)
+
+	// calculate the handler type for HPA event
+	if handlerType != Delete {
+		handlerType = Invaid
+	}
 	if err == nil {
 		if handlerType != Delete {
 			handlerType = Update
@@ -55,12 +60,10 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 			if handlerType != Delete {
 				handlerType = Create
 			}
-		} else {
-			// TODO
-			return nil
 		}
 	}
 
+	// handlers HPA
 	switch handlerType {
 	case Delete:
 		// Delete HPA
@@ -77,6 +80,8 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 		// Update HPA
 		fmt.Println("update HPA")
 		return nil
+	default:
+		return fmt.Errorf("invalid handler type")
 	}
 
 	hpaAnnotations := make(map[string]string)
