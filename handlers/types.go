@@ -26,6 +26,8 @@ const (
 
 const (
 	KubezHpaController = "kubez.hpa.controller"
+
+	KubezManger = "kubez-autoscaler"
 )
 
 type ScaleTarget string

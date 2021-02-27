@@ -141,7 +141,7 @@ func createHorizontalPodAutoscaler(namespacedName types.NamespacedName, apiVersi
 			Name:      namespacedName.Name,
 			Namespace: namespacedName.Namespace,
 			Labels: map[string]string{
-				KubezHpaController: "kubez",
+				KubezHpaController: KubezManger,
 			},
 		},
 		Spec: v2beta2.HorizontalPodAutoscalerSpec{
