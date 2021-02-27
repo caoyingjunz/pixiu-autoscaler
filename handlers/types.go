@@ -26,6 +26,8 @@ const (
 
 const (
 	KubezHpaController = "kubez.hpa.controller"
+
+	Kubez = "caoyingjunz"
 )
 
 type ScaleTarget string
