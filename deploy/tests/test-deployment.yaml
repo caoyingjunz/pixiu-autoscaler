@@ -21,6 +21,13 @@ spec:
       - image: nginx
         imagePullPolicy: IfNotPresent
         name: nginx
+        resources:
+          requests:
+            cpu: 1m
+            memory: 100Mi
+          limits:
+            cpu: 3m
+            memory: 400Mi
 
 ---
 
