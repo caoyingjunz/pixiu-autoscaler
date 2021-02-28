@@ -118,12 +118,14 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 		}
 
 		if isResource && isHpa {
+			// deployment 存在，hpa 注释不存在，且 hpa 存在，删除
+			if minInt32 == 0 && maxInt32 == 0 {
+				return h.client.Delete(context.TODO(), hpa)
+			}
+
 			// deployment 和 hpa 均存在，检查是否有变化，如果有则更新
 			// TODO: 需要优化
-			hpaMinRcs := *hpa.Spec.MinReplicas
-			hapMaxRcs := hpa.Spec.MaxReplicas
-
-			if minInt32 != hpaMinRcs || maxInt32 != hapMaxRcs {
+			if minInt32 != *hpa.Spec.MinReplicas || maxInt32 != hpa.Spec.MaxReplicas {
 				hpa.Spec.MinReplicas = &minInt32
 				hpa.Spec.MaxReplicas = maxInt32
 				return h.client.Update(context.TODO(), hpa)
