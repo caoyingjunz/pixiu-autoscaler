@@ -2,4 +2,6 @@
 
 ### Install The Kubez Autoscaler
 
-TODO
+``` bash
+kubectl apply -f kubez-autoscaler.yaml
+```
