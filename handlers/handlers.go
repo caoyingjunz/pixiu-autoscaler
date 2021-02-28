@@ -22,7 +22,7 @@ import (
 
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
-	"k8s.io/api/autoscaling/v2beta2"
+	"k8s.io/api/autoscaling/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -48,7 +48,7 @@ type HPAHandler struct {
 
 func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types.NamespacedName, handlerResource interface{}, scaleTarget ScaleTarget) error {
 
-	hpa := &v2beta2.HorizontalPodAutoscaler{}
+	hpa := &v1.HorizontalPodAutoscaler{}
 	err := h.client.Get(context.TODO(), namespacedName, hpa)
 	if err != nil {
 		if !errors.IsNotFound(err) {
@@ -146,9 +146,9 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 	return nil
 }
 
-func createHorizontalPodAutoscaler(namespacedName types.NamespacedName, apiVersion, kind string, hpaAnnotations map[string]int32) *v2beta2.HorizontalPodAutoscaler {
+func createHorizontalPodAutoscaler(namespacedName types.NamespacedName, apiVersion, kind string, hpaAnnotations map[string]int32) *v1.HorizontalPodAutoscaler {
 	mrs := hpaAnnotations[minReplicas]
-	hpa := &v2beta2.HorizontalPodAutoscaler{
+	hpa := &v1.HorizontalPodAutoscaler{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      namespacedName.Name,
 			Namespace: namespacedName.Namespace,
@@ -156,10 +156,10 @@ func createHorizontalPodAutoscaler(namespacedName types.NamespacedName, apiVersi
 				KubezHpaController: KubezManger,
 			},
 		},
-		Spec: v2beta2.HorizontalPodAutoscalerSpec{
+		Spec: v1.HorizontalPodAutoscalerSpec{
 			MinReplicas: &mrs,
 			MaxReplicas: hpaAnnotations[maxReplicas],
-			ScaleTargetRef: v2beta2.CrossVersionObjectReference{
+			ScaleTargetRef: v1.CrossVersionObjectReference{
 				APIVersion: apiVersion,
 				Kind:       kind,
 				Name:       namespacedName.Name,
