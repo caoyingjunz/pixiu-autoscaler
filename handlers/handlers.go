@@ -18,6 +18,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 
 	"github.com/go-logr/logr"
@@ -143,6 +144,11 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 		}
 	}
 
+	return nil
+}
+
+func (h *HPAHandler) ReconcileAutoscaler(ctx context.Context, namespacedName types.NamespacedName) error {
+	fmt.Println(namespacedName)
 	return nil
 }
 
