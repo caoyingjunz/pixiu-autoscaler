@@ -20,6 +20,7 @@ import (
 	"context"
 	"strconv"
 
+	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/api/autoscaling/v2beta2"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -28,18 +29,20 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func NewHPAHandler(client client.Client) *HPAHandler {
+func NewHPAHandler(client client.Client, log logr.Logger) *HPAHandler {
 	kubezas := KubezAutoscaler{}
 	kubezas.init(minReplicas, maxReplicas, targetCPUUtilizationPercentage)
 
 	return &HPAHandler{
 		client: client,
+		log:    log,
 		kas:    kubezas,
 	}
 }
 
 type HPAHandler struct {
 	client client.Client
+	log    logr.Logger
 	kas    KubezAutoscaler
 }
 
@@ -49,6 +52,7 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 	err := h.client.Get(context.TODO(), namespacedName, hpa)
 	if err != nil {
 		if !errors.IsNotFound(err) {
+			h.log.Error(err, "HandlerAutoscaler")
 			// Error reading the object - requeue the request.
 			return err
 		}
@@ -78,6 +82,7 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 			// 检查 hpa 是否为 kubez 所创建，如果是，则删除 hpa
 			_, ok := hpa.Labels[KubezHpaController]
 			if ok {
+				h.log.Info("deployment " + namespacedName.String() + " deleted and the hpa is deleting")
 				return h.client.Delete(context.TODO(), hpa)
 			}
 		}
@@ -91,6 +96,7 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 		if minExist {
 			minRcsInt, err := strconv.ParseInt(minRcs, 10, 32)
 			if err != nil {
+				h.log.Error(err, "strconv.ParseInt")
 				return err
 			}
 			minInt32 = int32(minRcsInt)
@@ -98,6 +104,7 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 		if maxExist {
 			maxRcsInt, err := strconv.ParseInt(maxRcs, 10, 32)
 			if err != nil {
+				h.log.Error(err, "strconv.ParseInt")
 				return err
 			}
 			maxInt32 = int32(maxRcsInt)
@@ -113,19 +120,24 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 					minReplicas: minInt32,
 					maxReplicas: maxInt32,
 				}
+				h.log.Info("deployment " + namespacedName.String() + " updated and the hpa is creating")
 				return h.client.Create(context.TODO(), createHorizontalPodAutoscaler(namespacedName, deployment.APIVersion, deployment.Kind, hpaAnnotations))
 			}
 		}
 
 		if isResource && isHpa {
+			// deployment 存在，hpa 注释不存在，且 hpa 存在，删除
+			if minInt32 == 0 && maxInt32 == 0 {
+				h.log.Info("deployment " + namespacedName.String() + " updated and the hpa is deleting")
+				return h.client.Delete(context.TODO(), hpa)
+			}
+
 			// deployment 和 hpa 均存在，检查是否有变化，如果有则更新
 			// TODO: 需要优化
-			hpaMinRcs := *hpa.Spec.MinReplicas
-			hapMaxRcs := hpa.Spec.MaxReplicas
-
-			if minInt32 != hpaMinRcs || maxInt32 != hapMaxRcs {
+			if minInt32 != *hpa.Spec.MinReplicas || maxInt32 != hpa.Spec.MaxReplicas {
 				hpa.Spec.MinReplicas = &minInt32
 				hpa.Spec.MaxReplicas = maxInt32
+				h.log.Info("deployment " + namespacedName.String() + " updated and the hpa is updating")
 				return h.client.Update(context.TODO(), hpa)
 			}
 		}

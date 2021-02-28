@@ -54,6 +54,7 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			// Error reading the object - requeue the request.
+			r.log.Error(err, "Reconcile")
 			return ctrl.Result{}, err
 		}
 	}
@@ -61,6 +62,7 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	err = r.handler.HandlerAutoscaler(ctx, req.NamespacedName, deployment, handlers.Deployment)
 	if err != nil {
 		// requeue the request.
+		r.log.Error(err, "HandlerAutoscaler")
 		return ctrl.Result{}, err
 	}
 

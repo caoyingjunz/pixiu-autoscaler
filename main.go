@@ -83,7 +83,7 @@ func main() {
 		clientset,
 		ctrl.Log.WithName("controllers").WithName("Deployment"),
 		scheme,
-		handlers.NewHPAHandler(clientset),
+		handlers.NewHPAHandler(clientset, ctrl.Log.WithName("controllers").WithName("Deployment")),
 	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Deployment")
 		os.Exit(1)
