@@ -21,13 +21,25 @@ subjects:
 
 ---
 
-apiVersion: v1
-kind: Pod
+apiVersion: apps/v1
+kind: Deployment
 metadata:
+  labels:
+    kubez.hpa.controller: kubez-autoscaler
   name: kubez-autoscaler-controller
   namespace: default
 spec:
-  containers:
-  - image:  jacky06/kubez-autoscaler-controller:v0.0.1
-    imagePullPolicy: IfNotPresent
-    name: kubez-autoscaler-controller
+  replicas: 1
+  selector:
+    matchLabels:
+      kubez.hpa.controller: kubez-autoscaler
+  template:
+    metadata:
+      labels:
+        kubez.hpa.controller: kubez-autoscaler
+    spec:
+      containers:
+        - image: jacky06/kubez-autoscaler-controller:v0.0.1
+          imagePullPolicy: IfNotPresent
+          name: kubez-autoscaler-controller
+      serviceAccountName: kubez
