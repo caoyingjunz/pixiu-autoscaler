@@ -89,6 +89,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	// HorizontalPodAutoscaler controller
+	if err = controllers.NewHorizontalPodAutoscalerReconciler(
+		mgr.GetClient(),
+		ctrl.Log.WithName("controllers").WithName("HorizontalPodAutoscaler"),
+		mgr.GetScheme(),
+		handlers.NewHPAHandler(mgr.GetClient(), ctrl.Log.WithName("controllers").WithName("HorizontalPodAutoscaler")),
+	).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "HorizontalPodAutoscaler")
+		os.Exit(1)
+	}
+
 	if err := mgr.AddHealthzCheck("health", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)
