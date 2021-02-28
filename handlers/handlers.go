@@ -146,6 +146,79 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 	return nil
 }
 
+func (h *HPAHandler) ReconcileAutoscaler(ctx context.Context, namespacedName types.NamespacedName) error {
+	// We assume the hpa is exists at begin
+	isHpaExists := true
+
+	hpa := &v1.HorizontalPodAutoscaler{}
+	err := h.client.Get(context.TODO(), namespacedName, hpa)
+	if err != nil {
+		if !errors.IsNotFound(err) {
+			h.log.Error(err, "ReconcileAutoscaler")
+			// Error reading the object - requeue the request.
+			return err
+		}
+		isHpaExists = false
+	}
+
+	if isHpaExists {
+		ScaleTargetKind := hpa.Spec.ScaleTargetRef.Kind
+		switch ScaleTargetKind {
+		case "Deployment":
+			deployment := &appsv1.Deployment{}
+			err := h.client.Get(context.TODO(), namespacedName, deployment)
+			if err != nil {
+				if !errors.IsNotFound(err) {
+					h.log.Error(err, "ReconcileAutoscaler")
+					return err
+				}
+				// TODO: 如果 deployment 需要删除 hpa
+				return nil
+			}
+			kubezAnnotations, err := parseKubezAutoscaler(deployment.Annotations)
+			if err != nil {
+				h.log.Error(err, "parseKubezAutoscaler")
+				return err
+			}
+
+			minRcs := kubezAnnotations[minReplicas]
+			maxRcs := kubezAnnotations[maxReplicas]
+			if *hpa.Spec.MinReplicas != minRcs || hpa.Spec.MaxReplicas != maxRcs {
+				hpa.Spec.MinReplicas = &minRcs
+				hpa.Spec.MaxReplicas = maxRcs
+				h.log.Info("The HPA " + namespacedName.String() + " is updating")
+				return h.client.Update(context.TODO(), hpa)
+			}
+		}
+	} else {
+		// If HPA deleted, try fetch the HPA from Deployment or the other resources
+		// TODO: for now, Just fetch from deployments
+		isDeploymentExists := true
+		deployment := &appsv1.Deployment{}
+		err := h.client.Get(context.TODO(), namespacedName, deployment)
+		if err != nil {
+			if !errors.IsNotFound(err) {
+				h.log.Error(err, "ReconcileAutoscaler")
+				return err
+			}
+			isDeploymentExists = false
+		}
+
+		if isDeploymentExists && needToBeCreated(deployment.Annotations) {
+			kubezAnnotations, err := parseKubezAutoscaler(deployment.Annotations)
+			if err != nil {
+				h.log.Error(err, "parseKubezAutoscaler")
+				return err
+			}
+			hpa := createHorizontalPodAutoscaler(namespacedName, deployment.APIVersion, deployment.Kind, kubezAnnotations)
+			h.log.Info("The HPA " + namespacedName.String() + " is recovering")
+			return h.client.Create(context.TODO(), hpa)
+		}
+	}
+
+	return nil
+}
+
 func createHorizontalPodAutoscaler(namespacedName types.NamespacedName, apiVersion, kind string, hpaAnnotations map[string]int32) *v1.HorizontalPodAutoscaler {
 	//TODO: targetCpu
 	targetCpu := int32(50)

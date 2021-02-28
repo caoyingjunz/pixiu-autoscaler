@@ -54,7 +54,7 @@ func (r *DeploymentReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			// Error reading the object - requeue the request.
-			r.log.Error(err, "Reconcile")
+			r.log.Error(err, "DeploymentReconciler")
 			return ctrl.Result{}, err
 		}
 	}
