@@ -31,3 +31,4 @@ spec:
   - image:  jacky06/kubez-autoscaler-controller:v0.0.1
     imagePullPolicy: IfNotPresent
     name: kubez-autoscaler-controller
+  serviceAccountName: kubez
