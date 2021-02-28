@@ -33,8 +33,9 @@ const (
 type ScaleTarget string
 
 const (
-	Deployment  ScaleTarget = "Deployment"
-	StatefulSet ScaleTarget = "StatefulSet"
+	Deployment              ScaleTarget = "Deployment"
+	StatefulSet             ScaleTarget = "StatefulSet"
+	HorizontalPodAutoscaler ScaleTarget = "HorizontalPodAutoscaler"
 )
 
 // Empty

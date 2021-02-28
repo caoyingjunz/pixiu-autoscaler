@@ -146,6 +146,56 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 	return nil
 }
 
+func (h *HPAHandler) ReconcileAutoscaler(ctx context.Context, namespacedName types.NamespacedName) error {
+	// We assume the hpa is exists at begin
+	isHpaExists := true
+
+	hpa := &v1.HorizontalPodAutoscaler{}
+	err := h.client.Get(context.TODO(), namespacedName, hpa)
+	if err != nil {
+		if !errors.IsNotFound(err) {
+			h.log.Error(err, "ReconcileAutoscaler")
+			// Error reading the object - requeue the request.
+			return err
+		}
+		isHpaExists = false
+	}
+
+	if isHpaExists {
+		ScaleTargetKind := hpa.Spec.ScaleTargetRef.Kind
+		switch ScaleTargetKind {
+		case "Deployment":
+			deployment := &appsv1.Deployment{}
+			err := h.client.Get(context.TODO(), namespacedName, deployment)
+			if err != nil {
+				if !errors.IsNotFound(err) {
+					h.log.Error(err, "ReconcileAutoscaler")
+					return err
+				}
+				// TODO: 如果 deployment 需要删除 hpa
+				return nil
+			}
+			minReplicas, maxReplicas, err := parseKubezAutoscaler(deployment.Annotations)
+			if err != nil {
+				h.log.Error(err, "parseKubezAutoscaler")
+				return err
+			}
+
+			if *hpa.Spec.MinReplicas != minReplicas || hpa.Spec.MaxReplicas != maxReplicas {
+				hpa.Spec.MinReplicas = &minReplicas
+				hpa.Spec.MaxReplicas = maxReplicas
+				h.log.Info("The HPA " + namespacedName.String() + " is updating")
+				return h.client.Update(context.TODO(), hpa)
+			}
+		}
+	} else {
+		// if the HPA
+		h.log.Info("The hpa " + namespacedName.String() + " is deleting")
+	}
+
+	return nil
+}
+
 func createHorizontalPodAutoscaler(namespacedName types.NamespacedName, apiVersion, kind string, hpaAnnotations map[string]int32) *v1.HorizontalPodAutoscaler {
 	//TODO: targetCpu
 	targetCpu := int32(50)
