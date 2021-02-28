@@ -128,6 +128,12 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 				hpa.Spec.MaxReplicas = maxInt32
 				return h.client.Update(context.TODO(), hpa)
 			}
+
+			// deployment 存在，hpa 注释不存在，且 hpa 存在，删除
+			if minInt32 == 0 && maxInt32 == 0 {
+				return h.client.Delete(context.TODO(), hpa)
+			}
+
 		}
 	}
 
