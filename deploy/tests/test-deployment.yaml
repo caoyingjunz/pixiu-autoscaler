@@ -2,8 +2,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    kubez.autoscaler.minReplicas: "2"
-    kubez.autoscaler.maxReplicas: "5"
+    kubez.autoscaler.minReplicas: "1"
+    kubez.autoscaler.maxReplicas: "3"
   labels:
     app: test1
   name: test1
@@ -21,6 +21,13 @@ spec:
       - image: nginx
         imagePullPolicy: IfNotPresent
         name: nginx
+        resources:
+          requests:
+            cpu: 1m
+            memory: 100Mi
+          limits:
+            cpu: 3m
+            memory: 400Mi
 
 ---
 
