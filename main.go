@@ -79,6 +79,7 @@ func main() {
 	clientset := mgr.GetClient()
 	scheme := mgr.GetScheme()
 
+	// Deployment controller
 	if err = controllers.NewDeploymentReconciler(
 		clientset,
 		ctrl.Log.WithName("controllers").WithName("Deployment"),
@@ -86,6 +87,17 @@ func main() {
 		handlers.NewHPAHandler(clientset, ctrl.Log.WithName("controllers").WithName("Deployment")),
 	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Deployment")
+		os.Exit(1)
+	}
+
+	// HorizontalPodAutoscaler controller
+	if err = controllers.NewHorizontalPodAutoscalerReconciler(
+		mgr.GetClient(),
+		ctrl.Log.WithName("controllers").WithName("HorizontalPodAutoscaler"),
+		mgr.GetScheme(),
+		handlers.NewHPAHandler(mgr.GetClient(), ctrl.Log.WithName("controllers").WithName("HorizontalPodAutoscaler")),
+	).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "HorizontalPodAutoscaler")
 		os.Exit(1)
 	}
 
