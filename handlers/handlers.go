@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	utilpointer "k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -135,7 +136,7 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 			// deployment 和 hpa 均存在，检查是否有变化，如果有则更新
 			// TODO: 需要优化
 			if minInt32 != *hpa.Spec.MinReplicas || maxInt32 != hpa.Spec.MaxReplicas {
-				hpa.Spec.MinReplicas = &minInt32
+				hpa.Spec.MinReplicas = utilpointer.Int32Ptr(minInt32)
 				hpa.Spec.MaxReplicas = maxInt32
 				h.log.Info("deployment " + namespacedName.String() + " updated and the hpa is updating")
 				return h.client.Update(context.TODO(), hpa)
@@ -184,7 +185,7 @@ func (h *HPAHandler) ReconcileAutoscaler(ctx context.Context, namespacedName typ
 			minRcs := kubezAnnotations[minReplicas]
 			maxRcs := kubezAnnotations[maxReplicas]
 			if *hpa.Spec.MinReplicas != minRcs || hpa.Spec.MaxReplicas != maxRcs {
-				hpa.Spec.MinReplicas = &minRcs
+				hpa.Spec.MinReplicas = utilpointer.Int32Ptr(minRcs)
 				hpa.Spec.MaxReplicas = maxRcs
 				h.log.Info("The HPA " + namespacedName.String() + " is updating")
 				return h.client.Update(context.TODO(), hpa)
@@ -220,9 +221,6 @@ func (h *HPAHandler) ReconcileAutoscaler(ctx context.Context, namespacedName typ
 }
 
 func createHorizontalPodAutoscaler(namespacedName types.NamespacedName, apiVersion, kind string, hpaAnnotations map[string]int32) *v1.HorizontalPodAutoscaler {
-	//TODO: targetCpu
-	targetCpu := int32(50)
-
 	mrs := hpaAnnotations[minReplicas]
 	hpa := &v1.HorizontalPodAutoscaler{
 		ObjectMeta: metav1.ObjectMeta{
@@ -240,7 +238,7 @@ func createHorizontalPodAutoscaler(namespacedName types.NamespacedName, apiVersi
 				Kind:       kind,
 				Name:       namespacedName.Name,
 			},
-			TargetCPUUtilizationPercentage: &targetCpu,
+			TargetCPUUtilizationPercentage: utilpointer.Int32Ptr(50),
 		},
 	}
 	return hpa
