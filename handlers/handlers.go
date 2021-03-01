@@ -252,10 +252,11 @@ func createHorizontalPodAutoscaler(namespacedName types.NamespacedName, uid type
 		},
 	}
 
+	// CPU metric
 	metric := autoscalingv2.MetricSpec{
 		Type: autoscalingv2.ResourceMetricSourceType,
 		Resource: &autoscalingv2.ResourceMetricSource{
-			Name: v1.ResourceName(namespacedName.Name),
+			Name: v1.ResourceCPU,
 			Target: autoscalingv2.MetricTarget{
 				Type:               autoscalingv2.UtilizationMetricType,
 				AverageUtilization: utilpointer.Int32Ptr(68),
