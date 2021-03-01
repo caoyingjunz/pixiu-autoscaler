@@ -152,7 +152,7 @@ func (h *HPAHandler) ReconcileAutoscaler(ctx context.Context, namespacedName typ
 	err := h.client.Get(context.TODO(), namespacedName, hpa)
 	if err != nil {
 		if !errors.IsNotFound(err) {
-			h.log.Error(err, "ReconcileAutoscaler")
+			h.log.Error(err, "ReconcileAutoscaler, Get HPA failed")
 			// Error reading the object - requeue the request.
 			return err
 		}
@@ -167,7 +167,7 @@ func (h *HPAHandler) ReconcileAutoscaler(ctx context.Context, namespacedName typ
 			err := h.client.Get(context.TODO(), namespacedName, deployment)
 			if err != nil {
 				if !errors.IsNotFound(err) {
-					h.log.Error(err, "ReconcileAutoscaler")
+					h.log.Error(err, "ReconcileAutoscaler, Get Deployment failed")
 					return err
 				}
 				// TODO: 如果 deployment 需要删除 hpa
@@ -196,7 +196,7 @@ func (h *HPAHandler) ReconcileAutoscaler(ctx context.Context, namespacedName typ
 		err := h.client.Get(context.TODO(), namespacedName, deployment)
 		if err != nil {
 			if !errors.IsNotFound(err) {
-				h.log.Error(err, "ReconcileAutoscaler")
+				h.log.Error(err, "ReconcileAutoscaler, Get Deployment failed")
 				return err
 			}
 			isDeploymentExists = false
@@ -252,10 +252,11 @@ func createHorizontalPodAutoscaler(namespacedName types.NamespacedName, uid type
 		},
 	}
 
+	// CPU metric
 	metric := autoscalingv2.MetricSpec{
 		Type: autoscalingv2.ResourceMetricSourceType,
 		Resource: &autoscalingv2.ResourceMetricSource{
-			Name: v1.ResourceName(namespacedName.Name),
+			Name: v1.ResourceCPU,
 			Target: autoscalingv2.MetricTarget{
 				Type:               autoscalingv2.UtilizationMetricType,
 				AverageUtilization: utilpointer.Int32Ptr(68),
