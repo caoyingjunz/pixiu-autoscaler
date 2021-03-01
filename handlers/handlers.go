@@ -18,6 +18,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 
 	"github.com/go-logr/logr"
@@ -87,9 +88,9 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 		// 获取 hpa 所需要的参数
 		minRcs, minExist := deployment.Annotations[minReplicas]
 		maxRcs, maxExist := deployment.Annotations[maxReplicas]
-		//targetCPU, cpuExist := deployment.Annotations[targetCPUUtilizationPercentage]
+		targetCPU, cpuExist := deployment.Annotations[targetCPUUtilizationPercentage]
 
-		var minInt32, maxInt32 int32
+		var minInt32, maxInt32, targetCPUInt32 int32
 		if minExist {
 			minRcsInt, err := strconv.ParseInt(minRcs, 10, 32)
 			if err != nil {
@@ -107,6 +108,21 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 			maxInt32 = int32(maxRcsInt)
 		}
 
+		// targetCPUUtilizationPercentage
+		if cpuExist {
+			targetInt, err := strconv.ParseInt(targetCPU, 10, 32)
+			if err != nil {
+				return err
+			}
+			targetCPUInt32 = int32(targetInt)
+		}
+		if targetCPUInt32 > 100 || targetCPUInt32 < 0 {
+			return fmt.Errorf("targetCPUUtilizationPercentage range must be 0 through 100")
+		}
+		if targetCPUInt32 == 0 {
+			targetCPUInt32 = 80
+		}
+
 		if isResource && !isHpa {
 			// deployment 存在，但是 hpa 不存在
 			// 检查 deployment 是否需要创建 hpa，如果是，则创建 hpa
@@ -114,8 +130,9 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 			if minExist && maxExist {
 				// 只有 2 个参数均存在的时候，才会触发 hpa 的创建
 				hpaAnnotations := map[string]int32{
-					minReplicas: minInt32,
-					maxReplicas: maxInt32,
+					minReplicas:                    minInt32,
+					maxReplicas:                    maxInt32,
+					targetCPUUtilizationPercentage: targetCPUInt32,
 				}
 				h.log.Info("deployment " + namespacedName.String() + " updated and the hpa is creating")
 				hpa := createHorizontalPodAutoscaler(namespacedName, deployment.UID, deployment.APIVersion, deployment.Kind, hpaAnnotations)
@@ -231,6 +248,10 @@ func createHorizontalPodAutoscaler(namespacedName types.NamespacedName, uid type
 	}
 
 	hpa := &autoscalingv2.HorizontalPodAutoscaler{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "HorizontalPodAutoscaler",
+			APIVersion: "autoscaling/v2beta2",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      namespacedName.Name,
 			Namespace: namespacedName.Namespace,
