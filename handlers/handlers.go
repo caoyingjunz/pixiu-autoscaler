@@ -22,7 +22,7 @@ import (
 
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
-	"k8s.io/api/autoscaling/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2beta2"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -49,7 +49,7 @@ type HPAHandler struct {
 
 func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types.NamespacedName, handlerResource interface{}, scaleTarget ScaleTarget) error {
 
-	hpa := &v1.HorizontalPodAutoscaler{}
+	hpa := &autoscalingv2.HorizontalPodAutoscaler{}
 	err := h.client.Get(context.TODO(), namespacedName, hpa)
 	if err != nil {
 		if !errors.IsNotFound(err) {
