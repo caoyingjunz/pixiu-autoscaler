@@ -27,23 +27,12 @@ func needToBeRecover(annotations map[string]string) bool {
 }
 
 func parseKubezAutoscaler(annotations map[string]string) (map[string]int32, error) {
-	// 获取 hpa 所需要的参数
-	minRcs, minOk := annotations[minReplicas]
+	// Precheck and parse kubez annotations
+	// return the map contains the required parameter from annotations with map
+	var minInt32, maxInt32, targetCPUUtilizationPercentageInt32 int32
+
+	// maxReplicas
 	maxRcs, maxOk := annotations[maxReplicas]
-	//targetCPU, cpuExist := deployment.Annotations[targetCPUUtilizationPercentage]
-
-	var minInt32, maxInt32 int32
-	if minOk {
-		minRcsInt, err := strconv.ParseInt(minRcs, 10, 32)
-		if err != nil {
-			return nil, err
-		}
-		minInt32 = int32(minRcsInt)
-	}
-	if minInt32 == 0 {
-		minInt32 = 1
-	}
-
 	if maxOk {
 		maxRcsInt, err := strconv.ParseInt(maxRcs, 10, 32)
 		if err != nil {
@@ -55,8 +44,38 @@ func parseKubezAutoscaler(annotations map[string]string) (map[string]int32, erro
 		return nil, fmt.Errorf("maxReplicas is requred")
 	}
 
+	// minReplicas
+	minRcs, minOk := annotations[minReplicas]
+	if minOk {
+		minRcsInt, err := strconv.ParseInt(minRcs, 10, 32)
+		if err != nil {
+			return nil, err
+		}
+		minInt32 = int32(minRcsInt)
+	}
+	if minInt32 == 0 {
+		minInt32 = 1
+	}
+
+	// targetCPUUtilizationPercentage
+	targetPercentage, targetOk := annotations[targetCPUUtilizationPercentage]
+	if targetOk {
+		targetInt, err := strconv.ParseInt(targetPercentage, 10, 32)
+		if err != nil {
+			return nil, err
+		}
+		targetCPUUtilizationPercentageInt32 = int32(targetInt)
+	}
+	if targetCPUUtilizationPercentageInt32 > 100 || targetCPUUtilizationPercentageInt32 < 0 {
+		return nil, fmt.Errorf("targetCPUUtilizationPercentage range must be 0 through 100")
+	}
+	if targetCPUUtilizationPercentageInt32 == 0 {
+		targetCPUUtilizationPercentageInt32 = 80
+	}
+
 	return map[string]int32{
-		minReplicas: minInt32,
-		maxReplicas: maxInt32,
+		minReplicas:                    minInt32,
+		maxReplicas:                    maxInt32,
+		targetCPUUtilizationPercentage: targetCPUUtilizationPercentageInt32,
 	}, nil
 }
