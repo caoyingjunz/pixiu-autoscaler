@@ -23,6 +23,7 @@ import (
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2beta2"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -122,7 +123,8 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 					maxReplicas: maxInt32,
 				}
 				h.log.Info("deployment " + namespacedName.String() + " updated and the hpa is creating")
-				return h.client.Create(context.TODO(), createHorizontalPodAutoscaler(namespacedName, deployment.APIVersion, deployment.Kind, hpaAnnotations))
+				hpa := createHorizontalPodAutoscaler(namespacedName, deployment.UID, deployment.APIVersion, deployment.Kind, hpaAnnotations)
+				return h.client.Create(context.TODO(), hpa)
 			}
 		}
 
@@ -151,7 +153,7 @@ func (h *HPAHandler) ReconcileAutoscaler(ctx context.Context, namespacedName typ
 	// We assume the hpa is exists at begin
 	isHpaExists := true
 
-	hpa := &v1.HorizontalPodAutoscaler{}
+	hpa := &autoscalingv2.HorizontalPodAutoscaler{}
 	err := h.client.Get(context.TODO(), namespacedName, hpa)
 	if err != nil {
 		if !errors.IsNotFound(err) {
@@ -211,7 +213,7 @@ func (h *HPAHandler) ReconcileAutoscaler(ctx context.Context, namespacedName typ
 				h.log.Error(err, "parseKubezAutoscaler")
 				return err
 			}
-			hpa := createHorizontalPodAutoscaler(namespacedName, deployment.APIVersion, deployment.Kind, kubezAnnotations)
+			hpa := createHorizontalPodAutoscaler(namespacedName, deployment.UID, deployment.APIVersion, deployment.Kind, kubezAnnotations)
 			h.log.Info("The HPA " + namespacedName.String() + " is recovering")
 			return h.client.Create(context.TODO(), hpa)
 		}
@@ -220,26 +222,52 @@ func (h *HPAHandler) ReconcileAutoscaler(ctx context.Context, namespacedName typ
 	return nil
 }
 
-func createHorizontalPodAutoscaler(namespacedName types.NamespacedName, apiVersion, kind string, hpaAnnotations map[string]int32) *v1.HorizontalPodAutoscaler {
-	mrs := hpaAnnotations[minReplicas]
-	hpa := &v1.HorizontalPodAutoscaler{
+func createHorizontalPodAutoscaler(namespacedName types.NamespacedName, uid types.UID, apiVersion, kind string, hpaAnnotations map[string]int32) *autoscalingv2.HorizontalPodAutoscaler {
+
+	controller := true
+	blockOwnerDeletion := true
+	ownerReference := metav1.OwnerReference{
+		APIVersion:         apiVersion,
+		Kind:               kind,
+		Name:               namespacedName.Name,
+		UID:                uid,
+		Controller:         &controller,
+		BlockOwnerDeletion: &blockOwnerDeletion,
+	}
+
+	hpa := &autoscalingv2.HorizontalPodAutoscaler{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      namespacedName.Name,
 			Namespace: namespacedName.Namespace,
 			Labels: map[string]string{
 				KubezHpaController: KubezManger,
 			},
+			OwnerReferences: []metav1.OwnerReference{
+				ownerReference,
+			},
 		},
-		Spec: v1.HorizontalPodAutoscalerSpec{
-			MinReplicas: &mrs,
+		Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
+			MinReplicas: utilpointer.Int32Ptr(hpaAnnotations[minReplicas]),
 			MaxReplicas: hpaAnnotations[maxReplicas],
-			ScaleTargetRef: v1.CrossVersionObjectReference{
+			ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
 				APIVersion: apiVersion,
 				Kind:       kind,
 				Name:       namespacedName.Name,
 			},
-			TargetCPUUtilizationPercentage: utilpointer.Int32Ptr(50),
 		},
 	}
+
+	metric := autoscalingv2.MetricSpec{
+		Type: autoscalingv2.ResourceMetricSourceType,
+		Resource: &autoscalingv2.ResourceMetricSource{
+			Name: v1.ResourceName(namespacedName.Name),
+			Target: autoscalingv2.MetricTarget{
+				Type:               autoscalingv2.UtilizationMetricType,
+				AverageUtilization: utilpointer.Int32Ptr(68),
+			},
+		},
+	}
+
+	hpa.Spec.Metrics = []autoscalingv2.MetricSpec{metric}
 	return hpa
 }
