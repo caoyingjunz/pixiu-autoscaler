@@ -259,7 +259,7 @@ func createHorizontalPodAutoscaler(namespacedName types.NamespacedName, uid type
 			Name: v1.ResourceCPU,
 			Target: autoscalingv2.MetricTarget{
 				Type:               autoscalingv2.UtilizationMetricType,
-				AverageUtilization: utilpointer.Int32Ptr(68),
+				AverageUtilization: utilpointer.Int32Ptr(hpaAnnotations[targetCPUUtilizationPercentage]),
 			},
 		},
 	}
