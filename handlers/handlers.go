@@ -49,7 +49,7 @@ type HPAHandler struct {
 }
 
 func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types.NamespacedName, handlerResource interface{}, scaleTarget ScaleTarget) error {
-
+	isHpa := true
 	hpa := &autoscalingv2.HorizontalPodAutoscaler{}
 	err := h.client.Get(context.TODO(), namespacedName, hpa)
 	if err != nil {
@@ -58,15 +58,10 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 			// Error reading the object - requeue the request.
 			return err
 		}
-	}
-
-	var isHpa bool
-	if len(hpa.Name) != 0 {
-		isHpa = true
+		isHpa = false
 	}
 
 	var isResource bool
-
 	switch scaleTarget {
 	case Deployment:
 		deployment := handlerResource.(*appsv1.Deployment)
