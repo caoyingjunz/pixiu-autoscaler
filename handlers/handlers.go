@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2beta2"
 	v1 "k8s.io/api/core/v1"
@@ -30,18 +29,18 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilpointer "k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"k8s.io/klog"
 )
 
-func NewHPAHandler(client client.Client, log logr.Logger) *HPAHandler {
+func NewHPAHandler(client client.Client) *HPAHandler {
 	return &HPAHandler{
 		client: client,
-		log:    log,
 	}
 }
 
 type HPAHandler struct {
 	client client.Client
-	log    logr.Logger
 }
 
 func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types.NamespacedName, handlerResource interface{}, scaleTarget ScaleTarget) error {
@@ -50,7 +49,7 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 	err := h.client.Get(context.TODO(), namespacedName, hpa)
 	if err != nil {
 		if !errors.IsNotFound(err) {
-			h.log.Error(err, "HandlerAutoscaler")
+			klog.Errorf("Get HPA %s failed: %v", namespacedName.String(), err)
 			// Error reading the object - requeue the request.
 			return err
 		}
@@ -67,6 +66,7 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 
 		if !isResource && !isHpa {
 			// deployment 和 hpa 均不存在，不需要做任何修改，直接返回
+			klog.Infof("Deployment %s deleted and the hpa not exits, do nothing", namespacedName.String())
 			return nil
 		}
 
@@ -75,7 +75,7 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 			// 检查 hpa 是否为 kubez 所创建，如果是，则删除 hpa
 			_, ok := hpa.Labels[KubezHpaController]
 			if ok {
-				h.log.Info("deployment " + namespacedName.String() + " deleted and the hpa is deleting")
+				klog.Infof("Deployment %s deleted and the hpa %s is deleting", namespacedName.String(), namespacedName.String())
 				return h.client.Delete(context.TODO(), hpa)
 			}
 		}
@@ -89,7 +89,7 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 		if minExist {
 			minRcsInt, err := strconv.ParseInt(minRcs, 10, 32)
 			if err != nil {
-				h.log.Error(err, "strconv.ParseInt")
+				klog.Errorf("convert string to int failed: %v", err)
 				return err
 			}
 			minInt32 = int32(minRcsInt)
@@ -97,7 +97,7 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 		if maxExist {
 			maxRcsInt, err := strconv.ParseInt(maxRcs, 10, 32)
 			if err != nil {
-				h.log.Error(err, "strconv.ParseInt")
+				klog.Errorf("convert string to int failed: %v", err)
 				return err
 			}
 			maxInt32 = int32(maxRcsInt)
@@ -129,7 +129,7 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 					maxReplicas:                    maxInt32,
 					targetCPUUtilizationPercentage: targetCPUInt32,
 				}
-				h.log.Info("deployment " + namespacedName.String() + " updated and the hpa is creating")
+				klog.Infof("Deployment %s updated with HPA and the HPA not exsits, creating it", namespacedName.String())
 				hpa := createHorizontalPodAutoscaler(namespacedName, deployment.UID, deployment.APIVersion, deployment.Kind, hpaAnnotations)
 				return h.client.Create(context.TODO(), hpa)
 			}
@@ -138,7 +138,7 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 		if isResource && isHpa {
 			// deployment 存在，hpa 注释不存在，且 hpa 存在，删除
 			if minInt32 == 0 && maxInt32 == 0 {
-				h.log.Info("deployment " + namespacedName.String() + " updated and the hpa is deleting")
+				klog.Infof("Deployment %s updated without HPA and the HPA exsits, Deleting it", namespacedName.String())
 				return h.client.Delete(context.TODO(), hpa)
 			}
 
@@ -147,7 +147,7 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 			if minInt32 != *hpa.Spec.MinReplicas || maxInt32 != hpa.Spec.MaxReplicas {
 				hpa.Spec.MinReplicas = utilpointer.Int32Ptr(minInt32)
 				hpa.Spec.MaxReplicas = maxInt32
-				h.log.Info("deployment " + namespacedName.String() + " updated and the hpa is updating")
+				klog.Infof("Deployment %s updated with HPA changed, updating it", namespacedName.String())
 				return h.client.Update(context.TODO(), hpa)
 			}
 		}
@@ -164,7 +164,7 @@ func (h *HPAHandler) ReconcileAutoscaler(ctx context.Context, namespacedName typ
 	err := h.client.Get(context.TODO(), namespacedName, hpa)
 	if err != nil {
 		if !errors.IsNotFound(err) {
-			h.log.Error(err, "ReconcileAutoscaler, Get HPA failed")
+			klog.Errorf("Get HPA %s failed: %v", namespacedName.String(), err)
 			// Error reading the object - requeue the request.
 			return err
 		}
@@ -179,7 +179,7 @@ func (h *HPAHandler) ReconcileAutoscaler(ctx context.Context, namespacedName typ
 			err := h.client.Get(context.TODO(), namespacedName, deployment)
 			if err != nil {
 				if !errors.IsNotFound(err) {
-					h.log.Error(err, "ReconcileAutoscaler, Get Deployment failed")
+					klog.Errorf("Get Deployment %s failed: %v", namespacedName.String(), err)
 					return err
 				}
 				// TODO: 如果 deployment 需要删除 hpa
@@ -187,7 +187,7 @@ func (h *HPAHandler) ReconcileAutoscaler(ctx context.Context, namespacedName typ
 			}
 			kubezAnnotations, err := parseKubezAutoscaler(deployment.Annotations)
 			if err != nil {
-				h.log.Error(err, "parseKubezAutoscaler")
+				klog.Errorf("parseKubezAutoscaler for %s failed: %v", namespacedName.String(), err)
 				return err
 			}
 
@@ -196,7 +196,7 @@ func (h *HPAHandler) ReconcileAutoscaler(ctx context.Context, namespacedName typ
 			if *hpa.Spec.MinReplicas != minRcs || hpa.Spec.MaxReplicas != maxRcs {
 				hpa.Spec.MinReplicas = utilpointer.Int32Ptr(minRcs)
 				hpa.Spec.MaxReplicas = maxRcs
-				h.log.Info("The HPA " + namespacedName.String() + " is updating")
+				klog.Infof("The HPA %s is updating", namespacedName.String())
 				return h.client.Update(context.TODO(), hpa)
 			}
 		}
@@ -208,7 +208,7 @@ func (h *HPAHandler) ReconcileAutoscaler(ctx context.Context, namespacedName typ
 		err := h.client.Get(context.TODO(), namespacedName, deployment)
 		if err != nil {
 			if !errors.IsNotFound(err) {
-				h.log.Error(err, "ReconcileAutoscaler, Get Deployment failed")
+				klog.Errorf("Get Deployment %s failed: %v", namespacedName.String(), err)
 				return err
 			}
 			isDeploymentExists = false
@@ -217,12 +217,19 @@ func (h *HPAHandler) ReconcileAutoscaler(ctx context.Context, namespacedName typ
 		if isDeploymentExists && needToBeRecover(deployment.Annotations) {
 			kubezAnnotations, err := parseKubezAutoscaler(deployment.Annotations)
 			if err != nil {
-				h.log.Error(err, "parseKubezAutoscaler")
+				klog.Errorf("%s parseKubezAutoscaler failed: %v", namespacedName.String(), err)
 				return err
 			}
 			hpa := createHorizontalPodAutoscaler(namespacedName, deployment.UID, deployment.APIVersion, deployment.Kind, kubezAnnotations)
-			h.log.Info("The HPA " + namespacedName.String() + " is recovering")
-			return h.client.Create(context.TODO(), hpa)
+			klog.Infof("The HPA %s is recovering", namespacedName.String())
+			err = h.client.Create(context.TODO(), hpa)
+			if err != nil {
+				// TODO
+				if errors.IsAlreadyExists(err) {
+					return nil
+				}
+			}
+			return err
 		}
 	}
 
