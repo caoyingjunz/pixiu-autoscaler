@@ -57,99 +57,107 @@ func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types
 	}
 
 	var isResource bool
+	var hpaAnnotations map[string]string
+	var uid types.UID
+	var APIVersion, Kind string
+
 	switch scaleTarget {
 	case Deployment:
 		deployment := handlerResource.(*appsv1.Deployment)
 		if len(deployment.Name) != 0 {
 			isResource = true
 		}
+		hpaAnnotations = deployment.Annotations
+		uid = deployment.UID
+		APIVersion = deployment.APIVersion
+		Kind = deployment.Kind
+	}
 
-		if !isResource && !isHpa {
-			// deployment 和 hpa 均不存在，不需要做任何修改，直接返回
-			klog.Infof("Deployment %s deleted and the hpa not exits, do nothing", namespacedName.String())
-			return nil
+	if !isResource && !isHpa {
+		// deployment 和 hpa 均不存在，不需要做任何修改，直接返回
+		klog.Infof("Deployment %s deleted and the hpa not exits, do nothing", namespacedName.String())
+		return nil
+	}
+
+	if !isResource && isHpa {
+		// deployment 不存在，但是 hpa 存在，
+		// 检查 hpa 是否为 kubez 所创建，如果是，则删除 hpa
+		_, ok := hpa.Labels[KubezHpaController]
+		if ok {
+			klog.Infof("Deployment %s deleted and the hpa %s is deleting", namespacedName.String(), namespacedName.String())
+			return h.client.Delete(context.TODO(), hpa)
 		}
+	}
 
-		if !isResource && isHpa {
-			// deployment 不存在，但是 hpa 存在，
-			// 检查 hpa 是否为 kubez 所创建，如果是，则删除 hpa
-			_, ok := hpa.Labels[KubezHpaController]
-			if ok {
-				klog.Infof("Deployment %s deleted and the hpa %s is deleting", namespacedName.String(), namespacedName.String())
-				return h.client.Delete(context.TODO(), hpa)
+	// 获取 hpa 所需要的参数
+	minRcs, minExist := hpaAnnotations[minReplicas]
+	maxRcs, maxExist := hpaAnnotations[maxReplicas]
+	targetCPU, cpuExist := hpaAnnotations[targetCPUUtilizationPercentage]
+
+	var minInt32, maxInt32, targetCPUInt32 int32
+	if minExist {
+		minRcsInt, err := strconv.ParseInt(minRcs, 10, 32)
+		if err != nil {
+			klog.Errorf("convert string to int failed: %v", err)
+			return err
+		}
+		minInt32 = int32(minRcsInt)
+	}
+	if maxExist {
+		maxRcsInt, err := strconv.ParseInt(maxRcs, 10, 32)
+		if err != nil {
+			klog.Errorf("convert string to int failed: %v", err)
+			return err
+		}
+		maxInt32 = int32(maxRcsInt)
+	}
+
+	// targetCPUUtilizationPercentage
+	if cpuExist {
+		targetInt, err := strconv.ParseInt(targetCPU, 10, 32)
+		if err != nil {
+			return err
+		}
+		targetCPUInt32 = int32(targetInt)
+	}
+	if targetCPUInt32 > 100 || targetCPUInt32 < 0 {
+		return fmt.Errorf("targetCPUUtilizationPercentage range must be 0 through 100")
+	}
+	if targetCPUInt32 == 0 {
+		targetCPUInt32 = 80
+	}
+
+	if isResource && !isHpa {
+		// deployment 存在，但是 hpa 不存在
+		// 检查 deployment 是否需要创建 hpa，如果是，则创建 hpa
+		// TODO: 优化
+		if minExist && maxExist {
+			// 只有 2 个参数均存在的时候，才会触发 hpa 的创建
+			hpaAnnotations := map[string]int32{
+				minReplicas:                    minInt32,
+				maxReplicas:                    maxInt32,
+				targetCPUUtilizationPercentage: targetCPUInt32,
 			}
+			klog.Infof("Deployment %s updated with HPA and the HPA not exsits, creating it", namespacedName.String())
+			hpa := createHorizontalPodAutoscaler(namespacedName, uid, APIVersion, Kind, hpaAnnotations)
+			return h.client.Create(context.TODO(), hpa)
+		}
+	}
+
+	if isResource && isHpa {
+		// deployment 存在，hpa 注释不存在，且 hpa 存在，删除
+		if minInt32 == 0 && maxInt32 == 0 {
+			klog.Infof("Deployment %s updated without HPA and the HPA exsits, Deleting it", namespacedName.String())
+			return h.client.Delete(context.TODO(), hpa)
 		}
 
-		// 获取 hpa 所需要的参数
-		minRcs, minExist := deployment.Annotations[minReplicas]
-		maxRcs, maxExist := deployment.Annotations[maxReplicas]
-		targetCPU, cpuExist := deployment.Annotations[targetCPUUtilizationPercentage]
-
-		var minInt32, maxInt32, targetCPUInt32 int32
-		if minExist {
-			minRcsInt, err := strconv.ParseInt(minRcs, 10, 32)
-			if err != nil {
-				klog.Errorf("convert string to int failed: %v", err)
-				return err
-			}
-			minInt32 = int32(minRcsInt)
-		}
-		if maxExist {
-			maxRcsInt, err := strconv.ParseInt(maxRcs, 10, 32)
-			if err != nil {
-				klog.Errorf("convert string to int failed: %v", err)
-				return err
-			}
-			maxInt32 = int32(maxRcsInt)
-		}
-
-		// targetCPUUtilizationPercentage
-		if cpuExist {
-			targetInt, err := strconv.ParseInt(targetCPU, 10, 32)
-			if err != nil {
-				return err
-			}
-			targetCPUInt32 = int32(targetInt)
-		}
-		if targetCPUInt32 > 100 || targetCPUInt32 < 0 {
-			return fmt.Errorf("targetCPUUtilizationPercentage range must be 0 through 100")
-		}
-		if targetCPUInt32 == 0 {
-			targetCPUInt32 = 80
-		}
-
-		if isResource && !isHpa {
-			// deployment 存在，但是 hpa 不存在
-			// 检查 deployment 是否需要创建 hpa，如果是，则创建 hpa
-			// TODO: 优化
-			if minExist && maxExist {
-				// 只有 2 个参数均存在的时候，才会触发 hpa 的创建
-				hpaAnnotations := map[string]int32{
-					minReplicas:                    minInt32,
-					maxReplicas:                    maxInt32,
-					targetCPUUtilizationPercentage: targetCPUInt32,
-				}
-				klog.Infof("Deployment %s updated with HPA and the HPA not exsits, creating it", namespacedName.String())
-				hpa := createHorizontalPodAutoscaler(namespacedName, deployment.UID, deployment.APIVersion, deployment.Kind, hpaAnnotations)
-				return h.client.Create(context.TODO(), hpa)
-			}
-		}
-
-		if isResource && isHpa {
-			// deployment 存在，hpa 注释不存在，且 hpa 存在，删除
-			if minInt32 == 0 && maxInt32 == 0 {
-				klog.Infof("Deployment %s updated without HPA and the HPA exsits, Deleting it", namespacedName.String())
-				return h.client.Delete(context.TODO(), hpa)
-			}
-
-			// deployment 和 hpa 均存在，检查是否有变化，如果有则更新
-			// TODO: 需要优化
-			if minInt32 != *hpa.Spec.MinReplicas || maxInt32 != hpa.Spec.MaxReplicas {
-				hpa.Spec.MinReplicas = utilpointer.Int32Ptr(minInt32)
-				hpa.Spec.MaxReplicas = maxInt32
-				klog.Infof("Deployment %s updated with HPA changed, updating it", namespacedName.String())
-				return h.client.Update(context.TODO(), hpa)
-			}
+		// deployment 和 hpa 均存在，检查是否有变化，如果有则更新
+		// TODO: 需要优化
+		if minInt32 != *hpa.Spec.MinReplicas || maxInt32 != hpa.Spec.MaxReplicas {
+			hpa.Spec.MinReplicas = utilpointer.Int32Ptr(minInt32)
+			hpa.Spec.MaxReplicas = maxInt32
+			klog.Infof("Deployment %s updated with HPA changed, updating it", namespacedName.String())
+			return h.client.Update(context.TODO(), hpa)
 		}
 	}
 
