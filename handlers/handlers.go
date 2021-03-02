@@ -247,6 +247,7 @@ func createHorizontalPodAutoscaler(namespacedName types.NamespacedName, uid type
 		BlockOwnerDeletion: &blockOwnerDeletion,
 	}
 
+	metrics := parseKubezMetrics(v1.ResourceCPU, hpaAnnotations)
 	hpa := &autoscalingv2.HorizontalPodAutoscaler{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "HorizontalPodAutoscaler",
@@ -270,14 +271,22 @@ func createHorizontalPodAutoscaler(namespacedName types.NamespacedName, uid type
 				Kind:       kind,
 				Name:       namespacedName.Name,
 			},
+			Metrics: metrics,
 		},
 	}
 
-	// CPU metric
+	return hpa
+}
+
+// parseKubezMetrics is to parse the Metrics from hpaAnnotations
+// TODO: should be parse more metrics
+func parseKubezMetrics(resourceName v1.ResourceName, hpaAnnotations map[string]int32) []autoscalingv2.MetricSpec {
+	metricSpecs := make([]autoscalingv2.MetricSpec, 0)
+
 	metric := autoscalingv2.MetricSpec{
 		Type: autoscalingv2.ResourceMetricSourceType,
 		Resource: &autoscalingv2.ResourceMetricSource{
-			Name: v1.ResourceCPU,
+			Name: resourceName,
 			Target: autoscalingv2.MetricTarget{
 				Type:               autoscalingv2.UtilizationMetricType,
 				AverageUtilization: utilpointer.Int32Ptr(hpaAnnotations[targetCPUUtilizationPercentage]),
@@ -285,6 +294,6 @@ func createHorizontalPodAutoscaler(namespacedName types.NamespacedName, uid type
 		},
 	}
 
-	hpa.Spec.Metrics = []autoscalingv2.MetricSpec{metric}
-	return hpa
+	metricSpecs = append(metricSpecs, metric)
+	return metricSpecs
 }
