@@ -84,7 +84,7 @@ func main() {
 		clientset,
 		ctrl.Log.WithName("controllers").WithName("Deployment"),
 		scheme,
-		handlers.NewHPAHandler(clientset, ctrl.Log.WithName("controllers").WithName("Deployment")),
+		handlers.NewHPAHandler(clientset),
 	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Deployment")
 		os.Exit(1)
@@ -95,7 +95,7 @@ func main() {
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName("HorizontalPodAutoscaler"),
 		mgr.GetScheme(),
-		handlers.NewHPAHandler(mgr.GetClient(), ctrl.Log.WithName("controllers").WithName("HorizontalPodAutoscaler")),
+		handlers.NewHPAHandler(mgr.GetClient()),
 	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "HorizontalPodAutoscaler")
 		os.Exit(1)
