@@ -16,8 +16,6 @@ limitations under the License.
 
 package handlers
 
-import "fmt"
-
 const (
 	minReplicas                    = "kubez.autoscaler.minReplicas"
 	maxReplicas                    = "kubez.autoscaler.maxReplicas"
@@ -37,32 +35,3 @@ const (
 	StatefulSet             ScaleTarget = "StatefulSet"
 	HorizontalPodAutoscaler ScaleTarget = "HorizontalPodAutoscaler"
 )
-
-// Empty
-type Empty struct{}
-
-type KubezAutoscaler map[string]Empty
-
-// Insert adds items to the Autoscaler.
-func (k KubezAutoscaler) init(items ...string) {
-	for _, item := range items {
-		k[item] = Empty{}
-	}
-}
-
-// isKubezAnnotation returns true if and only if item is contained in the Autoscaler.
-func (k KubezAutoscaler) isKubezAnnotation(annotation string) bool {
-	_, contained := k[annotation]
-	return contained
-}
-
-func (k KubezAutoscaler) isValid(annotationMap map[string]string) error {
-	for ka := range k {
-		_, contained := annotationMap[ka]
-		// TODO: the errors should be combined
-		if !contained {
-			return fmt.Errorf("%s is need but missing", ka)
-		}
-	}
-	return nil
-}

@@ -33,20 +33,15 @@ import (
 )
 
 func NewHPAHandler(client client.Client, log logr.Logger) *HPAHandler {
-	kubezas := KubezAutoscaler{}
-	kubezas.init(minReplicas, maxReplicas, targetCPUUtilizationPercentage)
-
 	return &HPAHandler{
 		client: client,
 		log:    log,
-		kas:    kubezas,
 	}
 }
 
 type HPAHandler struct {
 	client client.Client
 	log    logr.Logger
-	kas    KubezAutoscaler
 }
 
 func (h *HPAHandler) HandlerAutoscaler(ctx context.Context, namespacedName types.NamespacedName, handlerResource interface{}, scaleTarget ScaleTarget) error {
