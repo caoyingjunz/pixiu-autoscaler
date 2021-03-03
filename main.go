@@ -19,19 +19,25 @@ package main
 import (
 	"flag"
 	"os"
+	"time"
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/caoyingjunz/kubez-autoscaler/controllers"
 	"github.com/caoyingjunz/kubez-autoscaler/handlers"
+	"github.com/caoyingjunz/kubez-autoscaler/pkg/controller"
+	"github.com/caoyingjunz/kubez-autoscaler/pkg/controller/autoscaler"
 )
 
 var (
@@ -75,20 +81,38 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Fetch the kubernetes clientset and scheme for deployment
-	clientset := mgr.GetClient()
-	scheme := mgr.GetScheme()
-
 	// Deployment controller
 	if err = controllers.NewDeploymentReconciler(
-		clientset,
+		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName("Deployment"),
-		scheme,
-		handlers.NewHPAHandler(clientset),
+		mgr.GetScheme(),
+		handlers.NewHPAHandler(mgr.GetClient()),
 	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Deployment")
 		os.Exit(1)
 	}
+
+	// TODO
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		panic(err.Error())
+	}
+
+	rootClientBuilder := controller.SimpleControllerClientBuilder{
+		ClientConfig: config,
+	}
+
+	versionedClient := rootClientBuilder.ClientOrDie("shared-informers")
+	sharedInformers := informers.NewSharedInformerFactory(versionedClient, time.Minute)
+
+	ac, err := autoscaler.NewAutoscalerController(sharedInformers.Autoscaling().V2beta2(), versionedClient)
+	if err != nil {
+		panic(err.Error())
+	}
+	ac.Run(stopCh)
 
 	// HorizontalPodAutoscaler controller
 	if err = controllers.NewHorizontalPodAutoscalerReconciler(
