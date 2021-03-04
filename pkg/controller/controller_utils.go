@@ -17,10 +17,15 @@ limitations under the License.
 package controller
 
 import (
+	autoscalingv2 "k8s.io/api/autoscaling/v2beta2"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	clientset "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog"
+	utilpointer "k8s.io/utils/pointer"
 )
 
 var (
@@ -60,4 +65,64 @@ func (b SimpleControllerClientBuilder) ClientOrDie(name string) clientset.Interf
 		klog.Fatal(err)
 	}
 	return client
+}
+
+func CreateHorizontalPodAutoscaler(
+	name string,
+	namespace string,
+	uid types.UID,
+	apiVersion,
+	kind string,
+	maxReplicas int32) *autoscalingv2.HorizontalPodAutoscaler {
+	controller := true
+	blockOwnerDeletion := true
+	ownerReference := metav1.OwnerReference{
+		APIVersion:         apiVersion,
+		Kind:               kind,
+		Name:               name,
+		UID:                uid,
+		Controller:         &controller,
+		BlockOwnerDeletion: &blockOwnerDeletion,
+	}
+
+	hpa := &autoscalingv2.HorizontalPodAutoscaler{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "HorizontalPodAutoscaler",
+			APIVersion: "autoscaling/v2beta2",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels: map[string]string{
+				KubezHpaController: KubezManger,
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				ownerReference,
+			},
+		},
+		Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
+			MinReplicas: utilpointer.Int32Ptr(int32(1)),
+			MaxReplicas: maxReplicas,
+			ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
+				APIVersion: apiVersion,
+				Kind:       kind,
+				Name:       name,
+			},
+		},
+	}
+
+	// CPU metric
+	metric := autoscalingv2.MetricSpec{
+		Type: autoscalingv2.ResourceMetricSourceType,
+		Resource: &autoscalingv2.ResourceMetricSource{
+			Name: v1.ResourceCPU,
+			Target: autoscalingv2.MetricTarget{
+				Type:               autoscalingv2.UtilizationMetricType,
+				AverageUtilization: utilpointer.Int32Ptr(int32(88)),
+			},
+		},
+	}
+
+	hpa.Spec.Metrics = []autoscalingv2.MetricSpec{metric}
+	return hpa
 }
