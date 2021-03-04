@@ -117,7 +117,7 @@ func main() {
 	if err != nil {
 		klog.Fatal(err)
 	}
-	go ac.Run(stopCh)
+	go ac.Run(5, stopCh)
 
 	if err := mgr.AddHealthzCheck("health", healthz.Ping); err != nil {
 		klog.Fatal("set up health check failed: %v", err)
