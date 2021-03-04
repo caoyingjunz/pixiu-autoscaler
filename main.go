@@ -42,6 +42,10 @@ import (
 	"github.com/caoyingjunz/kubez-autoscaler/pkg/controller/autoscaler"
 )
 
+const (
+	workers = 5
+)
+
 var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
@@ -117,7 +121,7 @@ func main() {
 	if err != nil {
 		klog.Fatal(err)
 	}
-	go ac.Run(stopCh)
+	go ac.Run(workers, stopCh)
 
 	if err := mgr.AddHealthzCheck("health", healthz.Ping); err != nil {
 		klog.Fatal("set up health check failed: %v", err)
