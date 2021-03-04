@@ -20,19 +20,8 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/record"
 	"k8s.io/klog"
 )
-
-type RSControlInterface interface {
-	PatchReplicaSet(namespace, name string, data []byte) error
-}
-
-// RealRSControl is the default implementation of RSControllerInterface.
-type RealRSControl struct {
-	KubeClient clientset.Interface
-	Recorder   record.EventRecorder
-}
 
 var (
 	KeyFunc = cache.DeletionHandlingMetaNamespaceKeyFunc
