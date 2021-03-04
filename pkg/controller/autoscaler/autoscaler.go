@@ -33,15 +33,11 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/component-base/metrics/prometheus/ratelimiter"
 	"k8s.io/klog"
-
-	"github.com/caoyingjunz/kubez-autoscaler/pkg/controller"
 )
 
 // AutoscalerController is responsible for synchronizing HPA objects stored
 // in the system.
 type AutoscalerController struct {
-	// rsControl is used for adopting/releasing replica sets.
-	rsControl     controller.RSControlInterface
 	client        clientset.Interface
 	eventRecorder record.EventRecorder
 
