@@ -17,10 +17,13 @@ limitations under the License.
 package autoscaler
 
 import (
+	"fmt"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"time"
 
 	autoscalingv2 "k8s.io/api/autoscaling/v2beta2"
 	"k8s.io/api/core/v1"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/informers"
 	// "k8s.io/apimachinery/pkg/util/wait"
 	autoscalinginformers "k8s.io/client-go/informers/autoscaling/v1"
@@ -83,11 +86,16 @@ func NewAutoscalerController(hpaInformer autoscalinginformers.HorizontalPodAutos
 }
 
 // Run begins watching and syncing.
-func (ac *AutoscalerController) Run(stopCh <-chan struct{}) {
+func (ac *AutoscalerController) Run(workers int, stopCh <-chan struct{}) {
+	defer utilruntime.HandleCrash()
+	defer ac.queue.ShutDown()
+
 	klog.Infof("Starting Autoscaler Controller")
 	defer klog.Infof("Shutting down Autoscaler Controller")
 
-	//go wait.Until(ac.worker, time.Second, stopCh)
+	for i := 0; i < workers; i++ {
+		go wait.Until(ac.worker, time.Second, stopCh)
+	}
 
 	//TODO: test for tmp will removed later
 	sharedInformers := informers.NewSharedInformerFactory(ac.client, time.Minute)
@@ -124,5 +132,7 @@ func (ac *AutoscalerController) worker() {
 }
 
 func (ac *AutoscalerController) processNextWorkItem() bool {
+	fmt.Println("test")
+	time.Sleep(time.Second * 5)
 	return true
 }
