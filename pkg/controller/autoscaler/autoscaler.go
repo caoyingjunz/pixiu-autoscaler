@@ -17,12 +17,14 @@ limitations under the License.
 package autoscaler
 
 import (
+	"fmt"
 	"time"
 
 	autoscalingv2 "k8s.io/api/autoscaling/v2beta2"
 	"k8s.io/api/core/v1"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
-	// "k8s.io/apimachinery/pkg/util/wait"
 	autoscalinginformers "k8s.io/client-go/informers/autoscaling/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -33,6 +35,8 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/component-base/metrics/prometheus/ratelimiter"
 	"k8s.io/klog"
+
+	"github.com/caoyingjunz/kubez-autoscaler/pkg/controller"
 )
 
 // AutoscalerController is responsible for synchronizing HPA objects stored
@@ -44,6 +48,7 @@ type AutoscalerController struct {
 	// To allow injection of syncKubez
 	syncHandler func(dKey string) error
 
+	enqueueHPA func(hpa *autoscalingv2.HorizontalPodAutoscaler)
 	// hpaLister is able to list/get HPAs from the shared cache from the informer passed in to
 	// NewHorizontalController.
 	hpaLister       autoscalinglisters.HorizontalPodAutoscalerLister
@@ -76,6 +81,9 @@ func NewAutoscalerController(hpaInformer autoscalinginformers.HorizontalPodAutos
 		UpdateFunc: ac.updateHPA,
 		DeleteFunc: ac.deleteHPA,
 	})
+
+	ac.enqueueHPA = ac.enqueue
+
 	ac.hpaLister = hpaInformer.Lister()
 	ac.hpaListerSynced = hpaInformer.Informer().HasSynced
 
@@ -83,11 +91,16 @@ func NewAutoscalerController(hpaInformer autoscalinginformers.HorizontalPodAutos
 }
 
 // Run begins watching and syncing.
-func (ac *AutoscalerController) Run(stopCh <-chan struct{}) {
+func (ac *AutoscalerController) Run(workers int, stopCh <-chan struct{}) {
+	defer utilruntime.HandleCrash()
+	defer ac.queue.ShutDown()
+
 	klog.Infof("Starting Autoscaler Controller")
 	defer klog.Infof("Shutting down Autoscaler Controller")
 
-	//go wait.Until(ac.worker, time.Second, stopCh)
+	for i := 0; i < workers; i++ {
+		go wait.Until(ac.worker, time.Second, stopCh)
+	}
 
 	//TODO: test for tmp will removed later
 	sharedInformers := informers.NewSharedInformerFactory(ac.client, time.Minute)
@@ -118,11 +131,23 @@ func (ac *AutoscalerController) deleteHPA(obj interface{}) {
 	klog.V(0).Infof("Deleting HPA %s", h.Name)
 }
 
+func (ac *AutoscalerController) enqueue(hpa *autoscalingv2.HorizontalPodAutoscaler) {
+	key, err := controller.KeyFunc(hpa)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", hpa, err))
+		return
+	}
+
+	ac.queue.Add(key)
+}
+
 func (ac *AutoscalerController) worker() {
 	for ac.processNextWorkItem() {
 	}
 }
 
 func (ac *AutoscalerController) processNextWorkItem() bool {
+	fmt.Println("test")
+	time.Sleep(time.Second * 5)
 	return true
 }
