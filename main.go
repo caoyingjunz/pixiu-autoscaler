@@ -18,7 +18,6 @@ package main
 
 import (
 	"flag"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -80,8 +79,7 @@ func main() {
 		LeaderElectionID:       "0a8573fa.github.com",
 	})
 	if err != nil {
-		setupLog.Error(err, "unable to start manager")
-		os.Exit(1)
+		klog.Fatal("start controller failed: %v", err)
 	}
 
 	// Deployment controller
@@ -91,8 +89,7 @@ func main() {
 		mgr.GetScheme(),
 		handlers.NewHPAHandler(mgr.GetClient()),
 	).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Deployment")
-		os.Exit(1)
+		klog.Fatal("create controller failed: %v", err)
 	}
 
 	stopCh := make(chan struct{})
@@ -122,29 +119,15 @@ func main() {
 	}
 	go ac.Run(stopCh)
 
-	// HorizontalPodAutoscaler controller
-	if err = controllers.NewHorizontalPodAutoscalerReconciler(
-		mgr.GetClient(),
-		ctrl.Log.WithName("controllers").WithName("HorizontalPodAutoscaler"),
-		mgr.GetScheme(),
-		handlers.NewHPAHandler(mgr.GetClient()),
-	).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "HorizontalPodAutoscaler")
-		os.Exit(1)
-	}
-
 	if err := mgr.AddHealthzCheck("health", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up health check")
-		os.Exit(1)
+		klog.Fatal("set up health check failed: %v", err)
 	}
 	if err := mgr.AddReadyzCheck("check", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up ready check")
-		os.Exit(1)
+		klog.Fatal("set up ready check failed: %v", err)
 	}
 
-	setupLog.Info("starting manager")
+	klog.Infof("Starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		setupLog.Error(err, "problem running manager")
-		os.Exit(1)
+		klog.Fatal("running manager failed: %v", err)
 	}
 }
