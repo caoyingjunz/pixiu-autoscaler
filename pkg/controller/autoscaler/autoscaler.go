@@ -156,30 +156,44 @@ func (ac *AutoscalerController) deleteHPA(obj interface{}) {
 	ac.handerHPAEvent(h)
 }
 
-func (ac *AutoscalerController) handerHPAEvent(hpa *autoscalingv2.HorizontalPodAutoscaler) error {
-	var apiVersion string
-	var uid types.UID
-	var hpaAnnotations map[string]string
+type KubeAutoscaler struct {
+	Kind        string
+	APIVersion  string
+	UID         types.UID
+	Annotations map[string]string
+}
 
-	kind := hpa.Spec.ScaleTargetRef.Kind
-	switch kind {
+func (ac *AutoscalerController) prepareFromHPA(hpa *autoscalingv2.HorizontalPodAutoscaler) (KubeAutoscaler, error) {
+	kac := KubeAutoscaler{
+		Kind: hpa.Spec.ScaleTargetRef.Kind,
+	}
+
+	switch hpa.Spec.ScaleTargetRef.Kind {
 	case "Deployment":
 		deployment, err := ac.client.AppsV1().Deployments(hpa.Namespace).Get(context.TODO(), hpa.Name, metav1.GetOptions{})
 		if err != nil {
-			if errors.IsNotFound(err) {
-				klog.Infof("Deployment %s/%s has been deleted", hpa.Namespace, hpa.Name)
-				return nil
-			}
-			return err
+			return kac, err
 		}
-		// TODO
-		apiVersion = "apps/v1"
-		uid = deployment.UID
-		hpaAnnotations = deployment.Annotations
+
+		kac.APIVersion = "apps/v1"
+		kac.UID = deployment.UID
+		kac.Annotations = deployment.Annotations
+	}
+	return kac, nil
+}
+
+func (ac *AutoscalerController) handerHPAEvent(hpa *autoscalingv2.HorizontalPodAutoscaler) error {
+	kac, err := ac.prepareFromHPA(hpa)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			klog.Infof("%s %s/%s has been deleted", hpa.Kind, hpa.Namespace, hpa.Name)
+			return nil
+		}
+		return err
 	}
 
 	// TODO 可以封装，临时解决
-	maxReplicas, ok := hpaAnnotations[controller.MaxReplicas]
+	maxReplicas, ok := kac.Annotations[controller.MaxReplicas]
 	if !ok {
 		// return directly
 		return nil
@@ -191,14 +205,14 @@ func (ac *AutoscalerController) handerHPAEvent(hpa *autoscalingv2.HorizontalPodA
 	}
 
 	// Recover HPA from deployment
-	nHpa := controller.CreateHorizontalPodAutoscaler(hpa.Name, hpa.Namespace, uid, apiVersion, kind, int32(maxReplicasInt))
-	klog.Infof("Recovering HPA %s/%s from %s", hpa.Namespace, hpa.Name, kind)
+	nHpa := controller.CreateHorizontalPodAutoscaler(hpa.Name, hpa.Namespace, kac.UID, kac.APIVersion, kac.Kind, int32(maxReplicasInt))
+	klog.Infof("Recovering HPA %s/%s from %s", hpa.Namespace, hpa.Name, kac.Kind)
 	_, err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(hpa.Namespace).Create(context.TODO(), nHpa, metav1.CreateOptions{})
 	if err != nil {
 		if errors.IsAlreadyExists(err) {
 			return nil
 		}
-		klog.Errorf("Recoverd HPA %s/%s from %s failed: %v", hpa.Namespace, hpa.Name, kind, err)
+		klog.Errorf("Recoverd HPA %s/%s from %s failed: %v", hpa.Namespace, hpa.Name, kac.Kind, err)
 		return err
 	}
 
