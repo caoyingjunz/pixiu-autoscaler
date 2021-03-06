@@ -165,7 +165,8 @@ type KubeAutoscaler struct {
 
 func (ac *AutoscalerController) prepareFromHPA(hpa *autoscalingv2.HorizontalPodAutoscaler) (KubeAutoscaler, error) {
 	kac := KubeAutoscaler{
-		Kind: hpa.Spec.ScaleTargetRef.Kind,
+		Kind:       hpa.Spec.ScaleTargetRef.Kind,
+		APIVersion: "apps/v1",
 	}
 
 	switch hpa.Spec.ScaleTargetRef.Kind {
@@ -175,7 +176,6 @@ func (ac *AutoscalerController) prepareFromHPA(hpa *autoscalingv2.HorizontalPodA
 			return kac, err
 		}
 
-		kac.APIVersion = "apps/v1"
 		kac.UID = deployment.UID
 		kac.Annotations = deployment.Annotations
 	}
