@@ -36,8 +36,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/caoyingjunz/kubez-autoscaler/controllers"
-	"github.com/caoyingjunz/kubez-autoscaler/handlers"
 	"github.com/caoyingjunz/kubez-autoscaler/pkg/controller"
 	"github.com/caoyingjunz/kubez-autoscaler/pkg/controller/autoscaler"
 )
@@ -84,16 +82,6 @@ func main() {
 	})
 	if err != nil {
 		klog.Fatal("start controller failed: %v", err)
-	}
-
-	// Deployment controller
-	if err = controllers.NewDeploymentReconciler(
-		mgr.GetClient(),
-		ctrl.Log.WithName("controllers").WithName("Deployment"),
-		mgr.GetScheme(),
-		handlers.NewHPAHandler(mgr.GetClient()),
-	).SetupWithManager(mgr); err != nil {
-		klog.Fatal("create controller failed: %v", err)
 	}
 
 	stopCh := make(chan struct{})
