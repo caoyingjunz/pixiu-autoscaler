@@ -163,9 +163,12 @@ type KubeAutoscaler struct {
 	Annotations map[string]string
 }
 
-func (ac *AutoscalerController) prepareFromHPA(hpa *autoscalingv2.HorizontalPodAutoscaler) (KubeAutoscaler, error) {
+// Parse KubeAutoscaler from the given kubernetes resources, the resources could be
+// Deployment, ReplicaSet, StatefulSet, or ReplicationController.
+func (ac *AutoscalerController) parseFromReference(hpa *autoscalingv2.HorizontalPodAutoscaler) (KubeAutoscaler, error) {
 	kac := KubeAutoscaler{
-		Kind: hpa.Spec.ScaleTargetRef.Kind,
+		Kind:       hpa.Spec.ScaleTargetRef.Kind,
+		APIVersion: "apps/v1",
 	}
 
 	switch hpa.Spec.ScaleTargetRef.Kind {
@@ -175,7 +178,6 @@ func (ac *AutoscalerController) prepareFromHPA(hpa *autoscalingv2.HorizontalPodA
 			return kac, err
 		}
 
-		kac.APIVersion = "apps/v1"
 		kac.UID = deployment.UID
 		kac.Annotations = deployment.Annotations
 	}
@@ -183,7 +185,7 @@ func (ac *AutoscalerController) prepareFromHPA(hpa *autoscalingv2.HorizontalPodA
 }
 
 func (ac *AutoscalerController) handerHPAEvent(hpa *autoscalingv2.HorizontalPodAutoscaler) error {
-	kac, err := ac.prepareFromHPA(hpa)
+	kac, err := ac.parseFromReference(hpa)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			klog.Infof("%s %s/%s has been deleted", hpa.Kind, hpa.Namespace, hpa.Name)
