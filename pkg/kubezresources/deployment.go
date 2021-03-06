@@ -14,24 +14,4 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package handlers
-
-const (
-	minReplicas                    = "kubez.autoscaler.minReplicas"
-	maxReplicas                    = "kubez.autoscaler.maxReplicas"
-	targetCPUUtilizationPercentage = "kubez.autoscaler.targetCPUUtilizationPercentage"
-)
-
-const (
-	KubezHpaController = "kubez.hpa.controller"
-
-	KubezManger = "kubez-autoscaler"
-)
-
-type ScaleTarget string
-
-const (
-	Deployment              ScaleTarget = "Deployment"
-	StatefulSet             ScaleTarget = "StatefulSet"
-	HorizontalPodAutoscaler ScaleTarget = "HorizontalPodAutoscaler"
-)
+package kubezresources
