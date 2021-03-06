@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"time"
 
+	apps "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2beta2"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -30,10 +31,12 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
+	appsinformers "k8s.io/client-go/informers/apps/v1"
 	autoscalinginformers "k8s.io/client-go/informers/autoscaling/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
+	appslisters "k8s.io/client-go/listers/apps/v1"
 	autoscalinglisters "k8s.io/client-go/listers/autoscaling/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
@@ -59,12 +62,16 @@ type AutoscalerController struct {
 	hpaLister       autoscalinglisters.HorizontalPodAutoscalerLister
 	hpaListerSynced cache.InformerSynced
 
+	// dLister can list/get deployments from the shared informer's store
+	dLister       appslisters.DeploymentLister
+	dListerSynced cache.InformerSynced
+
 	// KubezController that need to be synced
 	queue workqueue.RateLimitingInterface
 }
 
 // NewAutoscalerController creates a new AutoscalerController.
-func NewAutoscalerController(hpaInformer autoscalinginformers.HorizontalPodAutoscalerInformer, client clientset.Interface) (*AutoscalerController, error) {
+func NewAutoscalerController(dInformer appsinformers.DeploymentInformer, hpaInformer autoscalinginformers.HorizontalPodAutoscalerInformer, client clientset.Interface) (*AutoscalerController, error) {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
 	eventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: client.CoreV1().Events("")})
@@ -81,17 +88,27 @@ func NewAutoscalerController(hpaInformer autoscalinginformers.HorizontalPodAutos
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "autoscaler"),
 	}
 
+	// HorizontalPodAutoscaler
 	hpaInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ac.addHPA,
 		UpdateFunc: ac.updateHPA,
 		DeleteFunc: ac.deleteHPA,
 	})
-
-	ac.syncHandler = ac.syncAutoscalers
-	ac.enqueueHPA = ac.enqueue
-
 	ac.hpaLister = hpaInformer.Lister()
 	ac.hpaListerSynced = hpaInformer.Informer().HasSynced
+
+	// Deployment
+	dInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ac.addDeployment,
+		UpdateFunc: ac.updateDeployment,
+		DeleteFunc: ac.deleteDeployment,
+	})
+	ac.dLister = dInformer.Lister()
+	ac.dListerSynced = dInformer.Informer().HasSynced
+
+	// syncAutoscalers
+	ac.syncHandler = ac.syncAutoscalers
+	ac.enqueueHPA = ac.enqueue
 
 	return ac, nil
 }
@@ -117,6 +134,14 @@ func (ac *AutoscalerController) Run(workers int, stopCh <-chan struct{}) {
 		DeleteFunc: ac.deleteHPA,
 	})
 	go informer.Run(stopCh)
+
+	dInformer := sharedInformers.Apps().V1().Deployments().Informer()
+	dInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ac.addDeployment,
+		UpdateFunc: ac.updateDeployment,
+		DeleteFunc: ac.deleteDeployment,
+	})
+	go dInformer.Run(stopCh)
 
 	<-stopCh
 }
@@ -155,6 +180,41 @@ func (ac *AutoscalerController) deleteHPA(obj interface{}) {
 	//ac.enqueueHPA(h)
 
 	ac.handerHPADeleteEvent(h)
+}
+
+func (ac *AutoscalerController) addDeployment(obj interface{}) {
+	d := obj.(*apps.Deployment)
+	klog.V(0).Infof("Adding Deployment %s/%s", d.Namespace, d.Name)
+
+	maxReplicas, ok := d.Annotations[controller.MaxReplicas]
+	if !ok {
+		// return directly
+		return
+	}
+
+	maxReplicasInt, err := strconv.ParseInt(maxReplicas, 10, 32)
+	if err != nil || maxReplicasInt == 0 {
+		return
+	}
+	hpa := controller.CreateHorizontalPodAutoscaler(d.Name, d.Namespace, d.UID, d.APIVersion, d.Kind, int32(maxReplicasInt))
+	klog.Infof("Creating HPA %s/%s from %s", d.Namespace, d.Name, d.Kind)
+	_, err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(d.Namespace).Create(context.TODO(), hpa, metav1.CreateOptions{})
+	if err != nil {
+		if errors.IsAlreadyExists(err) {
+			return
+		}
+	}
+}
+
+func (ac *AutoscalerController) updateDeployment(old, current interface{}) {
+	oldD := old.(*apps.Deployment)
+	curD := current.(*apps.Deployment)
+	klog.V(0).Infof("Updating Deployment %s/%s", oldD.Namespace, curD.Name)
+}
+
+func (ac *AutoscalerController) deleteDeployment(obj interface{}) {
+	d := obj.(apps.Deployment)
+	klog.V(0).Infof("Deleting Deployment %s/%s", d.Namespace, d.Name)
 }
 
 // KubeAutoscaler is responsible for HPA objects stored.
