@@ -36,8 +36,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/caoyingjunz/kubez-autoscaler/controllers"
-	"github.com/caoyingjunz/kubez-autoscaler/handlers"
 	"github.com/caoyingjunz/kubez-autoscaler/pkg/controller"
 	"github.com/caoyingjunz/kubez-autoscaler/pkg/controller/autoscaler"
 )
@@ -86,16 +84,6 @@ func main() {
 		klog.Fatal("start controller failed: %v", err)
 	}
 
-	// Deployment controller
-	if err = controllers.NewDeploymentReconciler(
-		mgr.GetClient(),
-		ctrl.Log.WithName("controllers").WithName("Deployment"),
-		mgr.GetScheme(),
-		handlers.NewHPAHandler(mgr.GetClient()),
-	).SetupWithManager(mgr); err != nil {
-		klog.Fatal("create controller failed: %v", err)
-	}
-
 	stopCh := make(chan struct{})
 	defer close(stopCh)
 
@@ -103,7 +91,7 @@ func main() {
 	var config *rest.Config
 	config, err = rest.InClusterConfig()
 	if err != nil {
-		klog.Warning("Get kube config from InClusterConfig failed, Try to fetch config from flags")
+		klog.Warning("Geting config from In-Cluster failed, Try fetching config from HomeDir")
 		config, err = clientcmd.BuildConfigFromFlags("", filepath.Join(homedir.HomeDir(), ".kube", "config"))
 		if err != nil {
 			klog.Fatal(err)
@@ -115,9 +103,13 @@ func main() {
 	}
 
 	versionedClient := rootClientBuilder.ClientOrDie("shared-informers")
-	sharedInformers := informers.NewSharedInformerFactory(versionedClient, time.Minute)
+	InformerFactory := informers.NewSharedInformerFactory(versionedClient, time.Minute)
 
-	ac, err := autoscaler.NewAutoscalerController(sharedInformers.Autoscaling().V1().HorizontalPodAutoscalers(), versionedClient)
+	ac, err := autoscaler.NewAutoscalerController(
+		InformerFactory.Apps().V1().Deployments(),
+		InformerFactory.Autoscaling().V1().HorizontalPodAutoscalers(),
+		rootClientBuilder.ClientOrDie("shared-informers"),
+	)
 	if err != nil {
 		klog.Fatal(err)
 	}
