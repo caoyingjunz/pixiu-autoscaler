@@ -87,7 +87,7 @@ func NewAutoscalerController(hpaInformer autoscalinginformers.HorizontalPodAutos
 		DeleteFunc: ac.deleteHPA,
 	})
 
-	ac.syncHandler = ac.syncAutoscaler
+	ac.syncHandler = ac.syncAutoscalers
 	ac.enqueueHPA = ac.enqueue
 
 	ac.hpaLister = hpaInformer.Lister()
@@ -122,7 +122,7 @@ func (ac *AutoscalerController) Run(workers int, stopCh <-chan struct{}) {
 }
 
 // syncAutoscaler will sync the autoscaler with the given key.
-func (ac *AutoscalerController) syncAutoscaler(key string) error {
+func (ac *AutoscalerController) syncAutoscalers(key string) error {
 	starTime := time.Now()
 	klog.Infof("Start syncing autoscaler %q (%v)", key, starTime)
 	defer func() {
@@ -139,33 +139,38 @@ func (ac *AutoscalerController) syncAutoscaler(key string) error {
 
 func (ac *AutoscalerController) addHPA(obj interface{}) {
 	h := obj.(*autoscalingv2.HorizontalPodAutoscaler)
-	klog.V(0).Infof("Adding HPA %s", h.Name)
+	klog.V(0).Infof("Adding HPA %s/%s", h.Namespace, h.Name)
 }
 
 func (ac *AutoscalerController) updateHPA(old, current interface{}) {
-	oldH := old.(*autoscalingv2.HorizontalPodAutoscaler)
-	newH := current.(*autoscalingv2.HorizontalPodAutoscaler)
-	klog.V(0).Infof("Updating old HPA %s and new HPA %s", oldH.Name, newH.Name)
+	cur := current.(*autoscalingv2.HorizontalPodAutoscaler)
+	klog.V(0).Infof("Updating HPA %s/%s", cur.Namespace, cur.Name)
+
+	ac.handerHPAUpdateEvent(cur)
 }
 
 func (ac *AutoscalerController) deleteHPA(obj interface{}) {
 	h := obj.(*autoscalingv2.HorizontalPodAutoscaler)
-	klog.V(0).Infof("Deleting HPA %s", h.Name)
+	klog.V(0).Infof("Deleting HPA %s/%s", h.Namespace, h.Name)
 	//ac.enqueueHPA(h)
 
-	ac.handerHPAEvent(h)
+	ac.handerHPADeleteEvent(h)
 }
 
+// KubeAutoscaler is responsible for HPA objects stored.
 type KubeAutoscaler struct {
-	Kind        string
 	APIVersion  string
+	Kind        string
 	UID         types.UID
 	Annotations map[string]string
 }
 
-func (ac *AutoscalerController) prepareFromHPA(hpa *autoscalingv2.HorizontalPodAutoscaler) (KubeAutoscaler, error) {
+// Parse KubeAutoscaler from the given kubernetes resources, the resources could be
+// Deployment, ReplicaSet, StatefulSet, or ReplicationController.
+func (ac *AutoscalerController) parseFromReference(hpa *autoscalingv2.HorizontalPodAutoscaler) (KubeAutoscaler, error) {
 	kac := KubeAutoscaler{
-		Kind: hpa.Spec.ScaleTargetRef.Kind,
+		APIVersion: "apps/v1",
+		Kind:       hpa.Spec.ScaleTargetRef.Kind,
 	}
 
 	switch hpa.Spec.ScaleTargetRef.Kind {
@@ -175,18 +180,53 @@ func (ac *AutoscalerController) prepareFromHPA(hpa *autoscalingv2.HorizontalPodA
 			return kac, err
 		}
 
-		kac.APIVersion = "apps/v1"
 		kac.UID = deployment.UID
 		kac.Annotations = deployment.Annotations
 	}
 	return kac, nil
 }
 
-func (ac *AutoscalerController) handerHPAEvent(hpa *autoscalingv2.HorizontalPodAutoscaler) error {
-	kac, err := ac.prepareFromHPA(hpa)
+func (ac *AutoscalerController) handerHPAUpdateEvent(cur *autoscalingv2.HorizontalPodAutoscaler) error {
+	kac, err := ac.parseFromReference(cur)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			klog.Infof("%s %s/%s has been deleted", hpa.Kind, hpa.Namespace, hpa.Name)
+			klog.Infof("HPA %s/%s has been deleted, reconciling (DELETE)", cur.Namespace, cur.Name)
+			return ac.client.AutoscalingV2beta2().
+				HorizontalPodAutoscalers(cur.Namespace).
+				Delete(context.TODO(), cur.Name, metav1.DeleteOptions{})
+		}
+		return err
+	}
+
+	// TODO：后续整合类型转换
+	maxReplicas, ok := kac.Annotations[controller.MaxReplicas]
+	if !ok {
+		// return directly
+		return nil
+	}
+
+	maxReplicasInt, err := strconv.ParseInt(maxReplicas, 10, 32)
+	if err != nil || maxReplicasInt == 0 {
+		return fmt.Errorf("maxReplicas is requred")
+	}
+	// TODO: 不需更新，直接返回
+	if int32(maxReplicasInt) == cur.Spec.MaxReplicas {
+		return nil
+	}
+
+	cur.Spec.MaxReplicas = int32(maxReplicasInt)
+	klog.Infof("HPA %s/%s has been updated, reconciling (UPDATE)", cur.Namespace, cur.Name)
+	_, err = ac.client.AutoscalingV2beta2().
+		HorizontalPodAutoscalers(cur.Namespace).
+		Update(context.TODO(), cur, metav1.UpdateOptions{})
+	return err
+}
+
+func (ac *AutoscalerController) handerHPADeleteEvent(hpa *autoscalingv2.HorizontalPodAutoscaler) error {
+	kac, err := ac.parseFromReference(hpa)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			klog.Infof("HPA %s/%s has been deleted", hpa.Namespace, hpa.Name)
 			return nil
 		}
 		return err
