@@ -30,10 +30,12 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
+	appsinformers "k8s.io/client-go/informers/apps/v1"
 	autoscalinginformers "k8s.io/client-go/informers/autoscaling/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
+	appslisters "k8s.io/client-go/listers/apps/v1"
 	autoscalinglisters "k8s.io/client-go/listers/autoscaling/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
@@ -42,6 +44,7 @@ import (
 	"k8s.io/klog"
 
 	"github.com/caoyingjunz/kubez-autoscaler/pkg/controller"
+	kzRcs "github.com/caoyingjunz/kubez-autoscaler/pkg/kubezresources"
 )
 
 // AutoscalerController is responsible for synchronizing HPA objects stored
@@ -59,12 +62,16 @@ type AutoscalerController struct {
 	hpaLister       autoscalinglisters.HorizontalPodAutoscalerLister
 	hpaListerSynced cache.InformerSynced
 
+	// dLister can list/get deployments from the shared informer's store
+	dLister       appslisters.DeploymentLister
+	dListerSynced cache.InformerSynced
+
 	// KubezController that need to be synced
 	queue workqueue.RateLimitingInterface
 }
 
 // NewAutoscalerController creates a new AutoscalerController.
-func NewAutoscalerController(hpaInformer autoscalinginformers.HorizontalPodAutoscalerInformer, client clientset.Interface) (*AutoscalerController, error) {
+func NewAutoscalerController(dInformer appsinformers.DeploymentInformer, hpaInformer autoscalinginformers.HorizontalPodAutoscalerInformer, client clientset.Interface) (*AutoscalerController, error) {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
 	eventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: client.CoreV1().Events("")})
@@ -81,17 +88,27 @@ func NewAutoscalerController(hpaInformer autoscalinginformers.HorizontalPodAutos
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "autoscaler"),
 	}
 
+	// HorizontalPodAutoscaler
 	hpaInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ac.addHPA,
 		UpdateFunc: ac.updateHPA,
 		DeleteFunc: ac.deleteHPA,
 	})
-
-	ac.syncHandler = ac.syncAutoscalers
-	ac.enqueueHPA = ac.enqueue
-
 	ac.hpaLister = hpaInformer.Lister()
 	ac.hpaListerSynced = hpaInformer.Informer().HasSynced
+
+	// Deployment
+	dInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    kzRcs.AddDeployment,
+		UpdateFunc: kzRcs.UpdateDeployment,
+		DeleteFunc: kzRcs.DeleteDeployment,
+	})
+	ac.dLister = dInformer.Lister()
+	ac.dListerSynced = dInformer.Informer().HasSynced
+
+	// syncAutoscalers
+	ac.syncHandler = ac.syncAutoscalers
+	ac.enqueueHPA = ac.enqueue
 
 	return ac, nil
 }
