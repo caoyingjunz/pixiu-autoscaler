@@ -21,6 +21,8 @@ import (
 	"os"
 	"time"
 
+	"k8s.io/component-base/logs"
+
 	"github.com/caoyingjunz/kubez-autoscaler/cmd/app"
 )
 
@@ -28,6 +30,10 @@ func main() {
 	rand.Seed(time.Now().UnixNano())
 
 	command := app.NewAutoscalerCommand()
+
+	logs.InitLogs()
+	defer logs.FlushLogs()
+
 	if err := command.Execute(); err != nil {
 		os.Exit(1)
 	}
