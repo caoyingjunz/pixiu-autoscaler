@@ -35,3 +35,11 @@ const (
 	StatefulSet             ScaleTarget = "StatefulSet"
 	HorizontalPodAutoscaler ScaleTarget = "HorizontalPodAutoscaler"
 )
+
+type ScaleType string
+
+const (
+	Add    ScaleType = "Add"
+	Update ScaleType = "Update"
+	Delete ScaleType = "Delete"
+)
