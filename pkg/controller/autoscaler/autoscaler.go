@@ -46,6 +46,11 @@ import (
 	"k8s.io/klog"
 
 	"github.com/caoyingjunz/kubez-autoscaler/pkg/controller"
+	"github.com/caoyingjunz/kubez-autoscaler/pkg/kubezstore"
+)
+
+const (
+	maxRetries = 15
 )
 
 // AutoscalerController is responsible for synchronizing HPA objects stored
@@ -54,21 +59,23 @@ type AutoscalerController struct {
 	client        clientset.Interface
 	eventRecorder record.EventRecorder
 
-	// To allow injection of syncKubez
-	syncHandler func(dKey string) error
-
-	enqueueHPA func(hpa *autoscalingv2.HorizontalPodAutoscaler)
-	// hpaLister is able to list/get HPAs from the shared cache from the informer passed in to
-	// NewHorizontalController.
-	hpaLister       autoscalinglisters.HorizontalPodAutoscalerLister
-	hpaListerSynced cache.InformerSynced
+	syncHandler       func(hpaKey string) error
+	enqueueAutoscaler func(hpa *autoscalingv2.HorizontalPodAutoscaler)
 
 	// dLister can list/get deployments from the shared informer's store
-	dLister       appslisters.DeploymentLister
-	dListerSynced cache.InformerSynced
+	dLister appslisters.DeploymentLister
+	// hpaLister is able to list/get HPAs from the shared informer's cache
+	hpaLister autoscalinglisters.HorizontalPodAutoscalerLister
 
-	// KubezController that need to be synced
+	// dListerSynced returns true if the Deployment store has been synced at least once.
+	dListerSynced cache.InformerSynced
+	// hpaListerSynced returns true if the HPA store has been synced at least once.
+	hpaListerSynced cache.InformerSynced
+
+	// AutoscalerController that need to be synced
 	queue workqueue.RateLimitingInterface
+	// Safe Store than to store the obj
+	store kubezstore.SafeStoreInterface
 }
 
 // NewAutoscalerController creates a new AutoscalerController.
@@ -87,16 +94,8 @@ func NewAutoscalerController(dInformer appsinformers.DeploymentInformer, hpaInfo
 		client:        client,
 		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "autoscaler-controller"}),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "autoscaler"),
+		store:         kubezstore.NewSafeStore(),
 	}
-
-	// HorizontalPodAutoscaler
-	hpaInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    ac.addHPA,
-		UpdateFunc: ac.updateHPA,
-		DeleteFunc: ac.deleteHPA,
-	})
-	ac.hpaLister = hpaInformer.Lister()
-	ac.hpaListerSynced = hpaInformer.Informer().HasSynced
 
 	// Deployment
 	dInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -104,12 +103,23 @@ func NewAutoscalerController(dInformer appsinformers.DeploymentInformer, hpaInfo
 		UpdateFunc: ac.updateDeployment,
 		DeleteFunc: ac.deleteDeployment,
 	})
+
+	// HorizontalPodAutoscaler
+	hpaInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ac.addHPA,
+		UpdateFunc: ac.updateHPA,
+		DeleteFunc: ac.deleteHPA,
+	})
+
 	ac.dLister = dInformer.Lister()
-	ac.dListerSynced = dInformer.Informer().HasSynced
+	ac.hpaLister = hpaInformer.Lister()
 
 	// syncAutoscalers
 	ac.syncHandler = ac.syncAutoscalers
-	ac.enqueueHPA = ac.enqueue
+	ac.enqueueAutoscaler = ac.enqueue
+
+	ac.dListerSynced = dInformer.Informer().HasSynced
+	ac.hpaListerSynced = hpaInformer.Informer().HasSynced
 
 	return ac, nil
 }
@@ -122,65 +132,78 @@ func (ac *AutoscalerController) Run(workers int, stopCh <-chan struct{}) {
 	klog.Infof("Starting Autoscaler Controller")
 	defer klog.Infof("Shutting down Autoscaler Controller")
 
-	for i := 0; i < workers; i++ {
-		go wait.Until(ac.worker, time.Second, stopCh)
-	}
-
-	// TODO: test for tmp will removed later
+	// TODO: tmp resolution, and will be removed
 	sharedInformers := informers.NewSharedInformerFactory(ac.client, time.Minute)
-	informer := sharedInformers.Autoscaling().V2beta2().HorizontalPodAutoscalers().Informer()
-	informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	hpaInformer := sharedInformers.Autoscaling().V2beta2().HorizontalPodAutoscalers().Informer()
+	hpaInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ac.addHPA,
 		UpdateFunc: ac.updateHPA,
 		DeleteFunc: ac.deleteHPA,
 	})
-	go informer.Run(stopCh)
+	go hpaInformer.Run(stopCh)
 
-	dInformer := sharedInformers.Apps().V1().Deployments().Informer()
-	dInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	deployInformer := sharedInformers.Apps().V1().Deployments().Informer()
+	deployInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ac.addDeployment,
 		UpdateFunc: ac.updateDeployment,
 		DeleteFunc: ac.deleteDeployment,
 	})
-	go dInformer.Run(stopCh)
+	go deployInformer.Run(stopCh)
 
+	for i := 0; i < workers; i++ {
+		go wait.Until(ac.worker, time.Second, stopCh)
+	}
 	<-stopCh
 }
 
 // syncAutoscaler will sync the autoscaler with the given key.
 func (ac *AutoscalerController) syncAutoscalers(key string) error {
 	starTime := time.Now()
-	klog.Infof("Start syncing autoscaler %q (%v)", key, starTime)
+	klog.V(2).Infof("Start syncing autoscaler %q (%v)", key, starTime)
 	defer func() {
-		klog.Infof("Finished syncing autoscaler %q (%v)", key, time.Since(starTime))
+		klog.V(2).Infof("Finished syncing autoscaler %q (%v)", key, time.Since(starTime))
 	}()
 
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return err
 	}
-	klog.Infof("namespace: %s, name: %s", namespace, name)
+
+	item, method, exists := ac.store.Get(key)
+	if exists {
+		klog.Infof("##### item: %v, method: %s", item, method)
+
+	}
+	klog.Infof("########### namespace: %s, name: %s", namespace, name)
 	return nil
 }
 
-func (ac *AutoscalerController) addHPA(obj interface{}) {
-	h := obj.(*autoscalingv2.HorizontalPodAutoscaler)
-	klog.V(0).Infof("Adding HPA %s/%s", h.Namespace, h.Name)
-}
+func (ac *AutoscalerController) addHPA(obj interface{}) {}
 
-func (ac *AutoscalerController) updateHPA(old, current interface{}) {
-	cur := current.(*autoscalingv2.HorizontalPodAutoscaler)
-	klog.V(0).Infof("Updating HPA %s/%s", cur.Namespace, cur.Name)
+// updateHPA figures out what HPA(s) is updated and wake them up.
+// old and cur must be *autoscalingv2.HorizontalPodAutoscaler types.
+func (ac *AutoscalerController) updateHPA(old, cur interface{}) {
+	oldH := old.(*autoscalingv2.HorizontalPodAutoscaler)
+	curH := cur.(*autoscalingv2.HorizontalPodAutoscaler)
+	if oldH.ResourceVersion == curH.ResourceVersion {
+		// Periodic resync will send update events for all known HPAs.
+		// Two different versions of the same HPA will always have different ResourceVersions.
+		return
+	}
+	klog.V(0).Infof("Updating HPA %s", oldH.Name)
+	ac.enqueueAutoscaler(curH)
 
-	ac.handerHPAUpdateEvent(cur)
+	key, _ := controller.KeyFunc(curH)
+	ac.store.Update(key, "Update", curH)
 }
 
 func (ac *AutoscalerController) deleteHPA(obj interface{}) {
 	h := obj.(*autoscalingv2.HorizontalPodAutoscaler)
 	klog.V(0).Infof("Deleting HPA %s/%s", h.Namespace, h.Name)
-	//ac.enqueueHPA(h)
+	ac.enqueueAutoscaler(h)
 
-	ac.handerHPADeleteEvent(h)
+	key, _ := controller.KeyFunc(h)
+	ac.store.Update(key, "Delete", h)
 }
 
 func (ac *AutoscalerController) addDeployment(obj interface{}) {
@@ -393,6 +416,7 @@ func (ac *AutoscalerController) enqueue(hpa *autoscalingv2.HorizontalPodAutoscal
 	ac.queue.Add(key)
 }
 
+// worker runs a worker thread that just dequeues items, processes then, and marks them done.
 func (ac *AutoscalerController) worker() {
 	for ac.processNextWorkItem() {
 	}
@@ -401,11 +425,33 @@ func (ac *AutoscalerController) worker() {
 func (ac *AutoscalerController) processNextWorkItem() bool {
 	key, quit := ac.queue.Get()
 	if quit {
-		fmt.Println("test")
 		return false
 	}
 	defer ac.queue.Done(key)
-	fmt.Println(key)
 
+	err := ac.syncHandler(key.(string))
+	ac.handleErr(err, key)
 	return true
+}
+
+//func (ac *AutoscalerController) enqueueRateLimited(deployment *apps.Deployment) {
+//	key, err := controller.KeyFunc(deployment)
+//	if err != nil {
+//		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", deployment, err))
+//		return
+//	}
+//
+//	ac.queue.AddRateLimited(key)
+//}
+
+func (ac *AutoscalerController) handleErr(err error, key interface{}) {
+	if ac.queue.NumRequeues(key) < maxRetries {
+		klog.V(0).Infof("Error syncing HPA %v: %v", key, err)
+		ac.queue.AddRateLimited(key)
+		return
+	}
+
+	utilruntime.HandleError(err)
+	klog.V(0).Infof("Dropping HPA %q out of the queue: %v", key, err)
+	ac.queue.Forget(key)
 }
