@@ -19,38 +19,34 @@ package kubezstore
 import "sync"
 
 type SafeStoreInterface interface {
-	Add(key string, method string, obj interface{})
-	Update(key string, method string, obj interface{})
+	Add(key string, obj interface{})
+	Update(key string, obj interface{})
 	Delete(key string)
-	Get(key string) (interface{}, string, bool)
+	Get(key string) (interface{}, bool)
 }
 
 type SafeStore struct {
-	lock    sync.RWMutex
-	items   map[string]interface{}
-	methods map[string]string
+	lock  sync.RWMutex
+	items map[string]interface{}
 }
 
-func (s *SafeStore) Get(key string) (interface{}, string, bool) {
+func (s *SafeStore) Get(key string) (interface{}, bool) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	item, exists1 := s.items[key]
-	method, exists2 := s.methods[key]
-	return item, method, exists1 && exists2
+	item, exists := s.items[key]
+	return item, exists
 }
 
-func (s *SafeStore) Add(key string, method string, obj interface{}) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	s.items[key] = obj
-	s.methods[key] = method
-}
-
-func (s *SafeStore) Update(key string, method string, obj interface{}) {
+func (s *SafeStore) Add(key string, obj interface{}) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	s.items[key] = obj
-	s.methods[key] = method
+}
+
+func (s *SafeStore) Update(key string, obj interface{}) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.items[key] = obj
 }
 
 func (s *SafeStore) Delete(key string) {
@@ -59,14 +55,10 @@ func (s *SafeStore) Delete(key string) {
 	if _, ok := s.items[key]; ok {
 		delete(s.items, key)
 	}
-	if _, mok := s.methods[key]; mok {
-		delete(s.methods, key)
-	}
 }
 
 func NewSafeStore() SafeStoreInterface {
 	return &SafeStore{
-		items:   map[string]interface{}{},
-		methods: map[string]string{},
+		items: map[string]interface{}{},
 	}
 }

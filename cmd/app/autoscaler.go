@@ -60,6 +60,7 @@ the core control loops shipped with advanced HPA.`,
 	return cmd
 }
 
+// Run runs the kubez-autoscaler process. This should never exit.
 func Run() error {
 	stopCh := make(chan struct{})
 	defer close(stopCh)
