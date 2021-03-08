@@ -27,7 +27,6 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
-	"k8s.io/klog"
 
 	"github.com/caoyingjunz/kubez-autoscaler/pkg/controller"
 	"github.com/caoyingjunz/kubez-autoscaler/pkg/controller/autoscaler"
@@ -62,31 +61,25 @@ the core control loops shipped with advanced HPA.`,
 }
 
 func Run() error {
-	// TODO(caoyingjunz): leader-elect, healthzCheck, and readyzCheck will be added later.
 	stopCh := make(chan struct{})
 	defer close(stopCh)
 
-	var config *rest.Config
-	config, err := rest.InClusterConfig()
+	config, err := buildConfig()
 	if err != nil {
-		klog.Warning("Geting config from In-Cluster failed, Try fetching config from HomeDir")
-		config, err = clientcmd.BuildConfigFromFlags("", filepath.Join(homedir.HomeDir(), ".kube", "config"))
-		if err != nil {
-			return err
-		}
+		return err
 	}
 
-	rootClientBuilder := controller.SimpleControllerClientBuilder{
+	clientBuilder := controller.SimpleControllerClientBuilder{
 		ClientConfig: config,
 	}
 
-	versionedClient := rootClientBuilder.ClientOrDie("shared-informers")
+	versionedClient := clientBuilder.ClientOrDie("shared-informers")
 	InformerFactory := informers.NewSharedInformerFactory(versionedClient, time.Minute)
 
 	ac, err := autoscaler.NewAutoscalerController(
 		InformerFactory.Apps().V1().Deployments(),
 		InformerFactory.Autoscaling().V1().HorizontalPodAutoscalers(),
-		rootClientBuilder.ClientOrDie("shared-informers"),
+		clientBuilder.ClientOrDie("shared-informers"),
 	)
 	if err != nil {
 		return err
@@ -96,4 +89,18 @@ func Run() error {
 	select {}
 
 	return nil
+}
+
+// Build the kubeconfig from in-cluster-config at first; if failed,
+// Try to get it from home dir.
+func buildConfig() (*rest.Config, error) {
+	var config *rest.Config
+	var err error
+
+	config, err = rest.InClusterConfig()
+	if err == nil {
+		return config, nil
+	}
+
+	return clientcmd.BuildConfigFromFlags("", filepath.Join(homedir.HomeDir(), ".kube", "config"))
 }
