@@ -51,6 +51,10 @@ import (
 
 const (
 	maxRetries = 15
+	s
+	Add    string = "Add"
+	Update string = "Update"
+	Delete string = "Delete"
 )
 
 // AutoscalerController is responsible for synchronizing HPA objects stored
