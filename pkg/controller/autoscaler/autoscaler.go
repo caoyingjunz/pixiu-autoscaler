@@ -26,7 +26,6 @@ import (
 	apps "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2beta2"
 	"k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -386,79 +385,6 @@ func (ac *AutoscalerController) parseFromReference(hpa *autoscalingv2.Horizontal
 		kac.Annotations = deployment.Annotations
 	}
 	return kac, nil
-}
-
-func (ac *AutoscalerController) handerHPAUpdateEvent(cur *autoscalingv2.HorizontalPodAutoscaler) error {
-	kac, err := ac.parseFromReference(cur)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			klog.Infof("HPA %s/%s has been deleted, reconciling (DELETE)", cur.Namespace, cur.Name)
-			return ac.client.AutoscalingV2beta2().
-				HorizontalPodAutoscalers(cur.Namespace).
-				Delete(context.TODO(), cur.Name, metav1.DeleteOptions{})
-		}
-		return err
-	}
-
-	// TODO：后续整合类型转换
-	maxReplicas, ok := kac.Annotations[controller.MaxReplicas]
-	if !ok {
-		// return directly
-		return nil
-	}
-
-	maxReplicasInt, err := strconv.ParseInt(maxReplicas, 10, 32)
-	if err != nil || maxReplicasInt == 0 {
-		return fmt.Errorf("maxReplicas is requred")
-	}
-	// TODO: 不需更新，直接返回
-	if int32(maxReplicasInt) == cur.Spec.MaxReplicas {
-		return nil
-	}
-
-	cur.Spec.MaxReplicas = int32(maxReplicasInt)
-	klog.Infof("HPA %s/%s has been updated, reconciling (UPDATE)", cur.Namespace, cur.Name)
-	_, err = ac.client.AutoscalingV2beta2().
-		HorizontalPodAutoscalers(cur.Namespace).
-		Update(context.TODO(), cur, metav1.UpdateOptions{})
-	return err
-}
-
-func (ac *AutoscalerController) handerHPADeleteEvent(hpa *autoscalingv2.HorizontalPodAutoscaler) error {
-	kac, err := ac.parseFromReference(hpa)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			klog.Infof("HPA %s/%s has been deleted", hpa.Namespace, hpa.Name)
-			return nil
-		}
-		return err
-	}
-
-	// TODO 可以封装，临时解决
-	maxReplicas, ok := kac.Annotations[controller.MaxReplicas]
-	if !ok {
-		// return directly
-		return nil
-	}
-
-	maxReplicasInt, err := strconv.ParseInt(maxReplicas, 10, 32)
-	if err != nil || maxReplicasInt == 0 {
-		return fmt.Errorf("maxReplicas is requred")
-	}
-
-	// Recover HPA from deployment
-	nHpa := controller.CreateHorizontalPodAutoscaler(hpa.Name, hpa.Namespace, kac.UID, kac.APIVersion, kac.Kind, int32(maxReplicasInt))
-	klog.Infof("Recovering HPA %s/%s from %s", hpa.Namespace, hpa.Name, kac.Kind)
-	_, err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(hpa.Namespace).Create(context.TODO(), nHpa, metav1.CreateOptions{})
-	if err != nil {
-		if errors.IsAlreadyExists(err) {
-			return nil
-		}
-		klog.Errorf("Recoverd HPA %s/%s from %s failed: %v", hpa.Namespace, hpa.Name, kac.Kind, err)
-		return err
-	}
-
-	return nil
 }
 
 func (ac *AutoscalerController) enqueue(hpa *autoscalingv2.HorizontalPodAutoscaler) {
