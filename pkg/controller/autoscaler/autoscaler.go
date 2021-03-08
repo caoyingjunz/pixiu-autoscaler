@@ -51,6 +51,12 @@ import (
 
 const (
 	maxRetries = 15
+
+	AddEvent    string = "Add"
+	UpdateEvent string = "Update"
+	DeleteEvent string = "Delete"
+
+	KubezEvent string = "kubezevent"
 )
 
 // AutoscalerController is responsible for synchronizing HPA objects stored
@@ -164,29 +170,40 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 		klog.V(2).Infof("Finished syncing autoscaler %q (%v)", key, time.Since(starTime))
 	}()
 
-	object, method, exists := ac.store.Get(key)
+	// Delete the obj from store even though the syncAutoscalers failed
 	defer ac.store.Delete(key)
+
+	obj, exists := ac.store.Get(key)
 	if !exists {
 		return nil
 	}
 
-	switch obj := object.(type) {
-	case *autoscalingv2.HorizontalPodAutoscaler:
-		klog.V(0).Infof("syncing Autoscalers HPA %s, method %s", key, method)
-		switch method {
-		case "Update":
-			ac.handerHPAUpdateEvent(obj)
-		case "Delete":
-			ac.handerHPADeleteEvent(obj)
-		default:
-			return fmt.Errorf("unknow HPA(%s) method", key)
-		}
-	case *apps.Deployment:
-		//TODO
-		klog.V(0).Infof("test %s (%s)", obj.Name, method)
+	hpa := obj.(*autoscalingv2.HorizontalPodAutoscaler)
+	event := hpa.Annotations[KubezEvent]
+
+	switch event {
+	case AddEvent:
+		klog.Infof("#### TODO HPA: %s/%s %s", hpa.Namespace, hpa.Name, event)
+	case UpdateEvent:
+		klog.Infof("#### TODO HPA: %s/%s %s", hpa.Namespace, hpa.Name, event)
+	case DeleteEvent:
+		klog.Infof("#### TODO HPA: %s/%s %s", hpa.Namespace, hpa.Name, event)
+	default:
+		return fmt.Errorf("unknow HPA: %s/%s event: %s", hpa.Namespace, hpa.Name, event)
 	}
 
 	return nil
+}
+
+// To insert annotation to distinguish the event type
+func (ac *AutoscalerController) InsertKubezAnnotation(hpa *autoscalingv2.HorizontalPodAutoscaler, event string) {
+	if hpa.Annotations == nil {
+		hpa.Annotations = map[string]string{
+			KubezEvent: event,
+		}
+		return
+	}
+	hpa.Annotations[KubezEvent] = event
 }
 
 func (ac *AutoscalerController) addHPA(obj interface{}) {}
@@ -202,19 +219,30 @@ func (ac *AutoscalerController) updateHPA(old, cur interface{}) {
 		return
 	}
 	klog.V(0).Infof("Updating HPA %s", oldH.Name)
-	ac.enqueueAutoscaler(curH)
 
-	key, _ := controller.KeyFunc(curH)
-	ac.store.Update(key, "Update", curH)
+	key, err := controller.KeyFunc(curH)
+	if err != nil {
+		return
+	}
+	// To insert annotation to distinguish the event type is Update
+	ac.InsertKubezAnnotation(curH, UpdateEvent)
+	ac.store.Update(key, curH)
+
+	ac.enqueueAutoscaler(curH)
 }
 
 func (ac *AutoscalerController) deleteHPA(obj interface{}) {
 	h := obj.(*autoscalingv2.HorizontalPodAutoscaler)
 	klog.V(0).Infof("Deleting HPA %s/%s", h.Namespace, h.Name)
-	ac.enqueueAutoscaler(h)
 
-	key, _ := controller.KeyFunc(h)
-	ac.store.Update(key, "Delete", h)
+	key, err := controller.KeyFunc(h)
+	if err != nil {
+		return
+	}
+	ac.InsertKubezAnnotation(h, DeleteEvent)
+	ac.store.Update(key, h)
+
+	ac.enqueueAutoscaler(h)
 }
 
 func (ac *AutoscalerController) addDeployment(obj interface{}) {
