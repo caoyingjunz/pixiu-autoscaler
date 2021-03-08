@@ -34,6 +34,8 @@ import (
 
 const (
 	workers = 5
+
+	kubezHomeConfig = ".kube/config"
 )
 
 // NewAutoscalerCommand creates a *cobra.Command object with default parameters
@@ -60,6 +62,7 @@ the core control loops shipped with advanced HPA.`,
 	return cmd
 }
 
+// Run runs the kubez-autoscaler process. This should never exit.
 func Run() error {
 	stopCh := make(chan struct{})
 	defer close(stopCh)
@@ -102,5 +105,5 @@ func buildConfig() (*rest.Config, error) {
 		return config, nil
 	}
 
-	return clientcmd.BuildConfigFromFlags("", filepath.Join(homedir.HomeDir(), ".kube", "config"))
+	return clientcmd.BuildConfigFromFlags("", filepath.Join(homedir.HomeDir(), kubezHomeConfig))
 }
