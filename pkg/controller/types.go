@@ -17,13 +17,18 @@ limitations under the License.
 package controller
 
 const (
+	KubezRootPrefix string = "hpa.caoyingjunz.autoscaler"
+
 	MinReplicas                    = "kubez.autoscaler.minReplicas"
 	MaxReplicas                    = "kubez.autoscaler.maxReplicas"
 	TargetCPUUtilizationPercentage = "kubez.autoscaler.targetCPUUtilizationPercentage"
 )
 
 const (
-	KubezHpaController = "kubez.hpa.controller"
+	KubezHpaController string = "kubez.hpa.controller"
 
-	KubezManger = "kubez-autoscaler"
+	KubezManger string = "kubez-autoscaler"
+
+	kubezCpuAnnotationPrefix    string = "cpu"
+	kubezMemoryAnnotationPrefix string = "memory"
 )
