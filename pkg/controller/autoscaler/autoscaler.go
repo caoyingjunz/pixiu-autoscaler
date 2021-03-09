@@ -305,11 +305,8 @@ func (ac *AutoscalerController) updateDeployment(old, new interface{}) {
 	newD := new.(*apps.Deployment)
 	klog.V(0).Infof("Updating Deployment %s/%s", oldD.Namespace, oldD.Name)
 
-	oldHPA, err := ac.GetHorizontalPodAutoscalerForDeployment(oldD)
-	if err != nil {
-		utilruntime.HandleError(err)
-		return
-	}
+	// No need to handler errors for old HPA, because it always success or nil
+	oldHPA, _ := ac.GetHorizontalPodAutoscalerForDeployment(oldD)
 	newHPA, err := ac.GetHorizontalPodAutoscalerForDeployment(newD)
 	if err != nil {
 		utilruntime.HandleError(err)
