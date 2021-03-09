@@ -26,6 +26,7 @@ import (
 	apps "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2beta2"
 	"k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -177,21 +178,38 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 		return nil
 	}
 
+	var err error
 	hpa := obj.(*autoscalingv2.HorizontalPodAutoscaler)
 	event := hpa.Annotations[KubezEvent]
+	// TODO: remove kubezevent from event
 
 	switch event {
 	case AddEvent:
-		klog.Infof("#### TODO HPA: %s/%s %s", hpa.Namespace, hpa.Name, event)
+		klog.V(2).Infof("Adding HPA: %s/%s", hpa.Namespace, hpa.Name)
+		_, err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(hpa.Namespace).Create(context.TODO(), hpa, metav1.CreateOptions{})
+		if errors.IsAlreadyExists(err) {
+			// The HPA has added
+			return nil
+		}
 	case UpdateEvent:
-		klog.Infof("#### TODO HPA: %s/%s %s", hpa.Namespace, hpa.Name, event)
+		klog.V(2).Infof("Updating HPA: %s/%s", hpa.Namespace, hpa.Name)
+		_, err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(hpa.Namespace).Update(context.TODO(), hpa, metav1.UpdateOptions{})
+		if errors.IsNotFound(err) {
+			// The HPA has deleted
+			return nil
+		}
 	case DeleteEvent:
-		klog.Infof("#### TODO HPA: %s/%s %s", hpa.Namespace, hpa.Name, event)
+		klog.V(2).Infof("Deleting HPA: %s/%s", hpa.Namespace, hpa.Name)
+		err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(hpa.Namespace).Delete(context.TODO(), hpa.Name, metav1.DeleteOptions{})
+		if errors.IsNotFound(err) {
+			// The HPA has deleted
+			return nil
+		}
 	default:
-		return fmt.Errorf("unknow HPA: %s/%s event: %s", hpa.Namespace, hpa.Name, event)
+		return fmt.Errorf("unknow HPA: %s/%s event", hpa.Namespace, hpa.Name)
 	}
 
-	return nil
+	return err
 }
 
 // To insert annotation to distinguish the event type
