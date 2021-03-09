@@ -28,7 +28,6 @@ import (
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
@@ -182,6 +181,7 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 
 	obj, exists := ac.store.Get(key)
 	if !exists {
+		// Do nothing and return directly
 		return nil
 	}
 
@@ -282,9 +282,15 @@ func (ac *AutoscalerController) addDeployment(obj interface{}) {
 	d := obj.(*apps.Deployment)
 	klog.V(0).Infof("Adding Deployment %s/%s", d.Namespace, d.Name)
 
-	if hpa := ac.GetHorizontalPodAutoscalerForDeployment(d); hpa != nil {
+	hpa, err := ac.GetHorizontalPodAutoscalerForDeployment(d)
+	if err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
+	if hpa != nil {
 		key, err := controller.KeyFunc(hpa)
 		if err != nil {
+			utilruntime.HandleError(err)
 			return
 		}
 		ac.InsertKubezAnnotation(hpa, AddEvent)
@@ -299,14 +305,21 @@ func (ac *AutoscalerController) updateDeployment(old, new interface{}) {
 	newD := new.(*apps.Deployment)
 	klog.V(0).Infof("Updating Deployment %s/%s", oldD.Namespace, oldD.Name)
 
-	oldHPA := ac.GetHorizontalPodAutoscalerForDeployment(oldD)
-	newHPA := ac.GetHorizontalPodAutoscalerForDeployment(newD)
+	oldHPA, err := ac.GetHorizontalPodAutoscalerForDeployment(oldD)
+	if err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
+	newHPA, err := ac.GetHorizontalPodAutoscalerForDeployment(newD)
+	if err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
 
 	// Do noting, return directly
 	if oldHPA == nil && newHPA == nil {
 		return
 	}
-
 	// Add
 	if oldHPA == nil && newHPA != nil {
 		key, err := controller.KeyFunc(newHPA)
@@ -355,9 +368,15 @@ func (ac *AutoscalerController) deleteDeployment(obj interface{}) {
 	d := obj.(*apps.Deployment)
 	klog.V(0).Infof("Deleting Deployment %s/%s", d.Namespace, d.Name)
 
-	if hpa := ac.GetHorizontalPodAutoscalerForDeployment(d); hpa != nil {
+	hpa, err := ac.GetHorizontalPodAutoscalerForDeployment(d)
+	if err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
+	if hpa != nil {
 		key, err := controller.KeyFunc(hpa)
 		if err != nil {
+			utilruntime.HandleError(err)
 			return
 		}
 		ac.InsertKubezAnnotation(hpa, DeleteEvent)
@@ -367,41 +386,33 @@ func (ac *AutoscalerController) deleteDeployment(obj interface{}) {
 	}
 }
 
-func (ac *AutoscalerController) GetHorizontalPodAutoscalerForDeployment(d *apps.Deployment) *autoscalingv2.HorizontalPodAutoscaler {
+func (ac *AutoscalerController) GetHorizontalPodAutoscalerForDeployment(d *apps.Deployment) (*autoscalingv2.HorizontalPodAutoscaler, error) {
 	if d == nil || d.Annotations == nil {
-		return nil
+		return nil, nil
 	}
 
 	// TODO: 暂时只判断是否含有 MaxReplicas
 	maxReplicas, ok := d.Annotations[controller.MaxReplicas]
 	if !ok {
-		return nil
+		return nil, nil
 	}
 
 	// TODO: ignore the error for now
 	maxReplicasInt, err := strconv.ParseInt(maxReplicas, 10, 32)
 	if err != nil || maxReplicasInt == 0 {
-		return nil
+		return nil, nil
 	}
 
 	hpa := controller.CreateHorizontalPodAutoscaler(d.Name, d.Namespace, d.UID, APIVersion, Deployment, int32(maxReplicasInt))
 
-	return hpa
-}
-
-// KubeAutoscaler is responsible for HPA objects stored.
-type KubeAutoscaler struct {
-	APIVersion  string
-	Kind        string
-	UID         types.UID
-	Annotations map[string]string
+	return hpa, nil
 }
 
 // Parse KubeAutoscaler from the given kubernetes resources, the resources could be
 // Deployment, ReplicaSet, StatefulSet, or ReplicationController.
-func (ac *AutoscalerController) parseFromReference(hpa *autoscalingv2.HorizontalPodAutoscaler) (KubeAutoscaler, error) {
-	kac := KubeAutoscaler{
-		APIVersion: "apps/v1",
+func (ac *AutoscalerController) parseFromReference(hpa *autoscalingv2.HorizontalPodAutoscaler) (controller.KubeAutoscaler, error) {
+	kac := controller.KubeAutoscaler{
+		APIVersion: APIVersion,
 		Kind:       hpa.Spec.ScaleTargetRef.Kind,
 	}
 
