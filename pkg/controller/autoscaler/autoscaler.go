@@ -55,7 +55,7 @@ const (
 	UpdateEvent string = "Update"
 	DeleteEvent string = "Delete"
 
-	KubezEvent string = "kubezevent"
+	kubezEvent string = "kubezevent"
 )
 
 const (
@@ -222,19 +222,19 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 func (ac *AutoscalerController) InsertKubezAnnotation(hpa *autoscalingv2.HorizontalPodAutoscaler, event string) {
 	if hpa.Annotations == nil {
 		hpa.Annotations = map[string]string{
-			KubezEvent: event,
+			kubezEvent: event,
 		}
 		return
 	}
-	hpa.Annotations[KubezEvent] = event
+	hpa.Annotations[kubezEvent] = event
 }
 
 // To pop kubez annotation and clean up kubez marker from HPA
 func (ac *AutoscalerController) PopKubezAnnotation(hpa *autoscalingv2.HorizontalPodAutoscaler) string {
-	event, exists := hpa.Annotations[KubezEvent]
+	event, exists := hpa.Annotations[kubezEvent]
 	// event must be exists
 	if exists {
-		delete(hpa.Annotations, KubezEvent)
+		delete(hpa.Annotations, kubezEvent)
 	}
 	return event
 }
