@@ -187,8 +187,7 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 
 	var err error
 	hpa := obj.(*autoscalingv2.HorizontalPodAutoscaler)
-	event := hpa.Annotations[KubezEvent]
-	// TODO: remove kubezevent from event
+	event := ac.PopKubezAnnotation(hpa)
 
 	switch event {
 	case AddEvent:
@@ -228,6 +227,16 @@ func (ac *AutoscalerController) InsertKubezAnnotation(hpa *autoscalingv2.Horizon
 		return
 	}
 	hpa.Annotations[KubezEvent] = event
+}
+
+// To pop kubez annotation and clean up kubez marker from HPA
+func (ac *AutoscalerController) PopKubezAnnotation(hpa *autoscalingv2.HorizontalPodAutoscaler) string {
+	event, exists := hpa.Annotations[KubezEvent]
+	// event must be exists
+	if exists {
+		delete(hpa.Annotations, KubezEvent)
+	}
+	return event
 }
 
 func (ac *AutoscalerController) addHPA(obj interface{}) {}
