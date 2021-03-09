@@ -59,6 +59,13 @@ const (
 	KubezEvent string = "kubezevent"
 )
 
+const (
+	APIVersion              string = "apps/v1"
+	Deployment              string = "Deployment"
+	StatefulSet             string = "StatefulSet"
+	HorizontalPodAutoscaler string = "HorizontalPodAutoscaler"
+)
+
 // AutoscalerController is responsible for synchronizing HPA objects stored
 // in the system.
 type AutoscalerController struct {
@@ -368,7 +375,7 @@ func (ac *AutoscalerController) GetHorizontalPodAutoscalerForDeployment(d *apps.
 		return nil
 	}
 
-	hpa := controller.CreateHorizontalPodAutoscaler(d.Name, d.Namespace, d.UID, d.APIVersion, d.Kind, int32(maxReplicasInt))
+	hpa := controller.CreateHorizontalPodAutoscaler(d.Name, d.Namespace, d.UID, APIVersion, Deployment, int32(maxReplicasInt))
 
 	return hpa
 }

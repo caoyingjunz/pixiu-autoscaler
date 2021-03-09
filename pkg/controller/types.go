@@ -27,11 +27,3 @@ const (
 
 	KubezManger = "kubez-autoscaler"
 )
-
-type ScaleTarget string
-
-const (
-	Deployment              ScaleTarget = "Deployment"
-	StatefulSet             ScaleTarget = "StatefulSet"
-	HorizontalPodAutoscaler ScaleTarget = "HorizontalPodAutoscaler"
-)
