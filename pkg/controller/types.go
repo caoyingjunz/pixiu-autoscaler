@@ -17,13 +17,21 @@ limitations under the License.
 package controller
 
 const (
-	MinReplicas                    = "kubez.autoscaler.minReplicas"
-	MaxReplicas                    = "kubez.autoscaler.maxReplicas"
-	TargetCPUUtilizationPercentage = "kubez.autoscaler.targetCPUUtilizationPercentage"
+	KubezRootPrefix                 string = "hpa.caoyingjunz.autoscaler"
+	KubezAnnotationSeparator        string = "/"
+	kubezCpuAnnotationPrefix        string = "cpu"
+	kubezMemoryAnnotationPrefix     string = "memory"
+	kubezPrometheusAnnotationPrefix string = "prometheus"
+
+	MinReplicas                    string = "minReplicas"
+	MaxReplicas                    string = "maxReplicas"
+	TargetCPUUtilizationPercentage string = "targetCPUUtilizationPercentage"
 )
 
-const (
-	KubezHpaController = "kubez.hpa.controller"
+func PrecheckAndFilterAnnotations(annotations map[string]string) (map[string]string, error) {
+	kubezAnnotations := make(map[string]string)
 
-	KubezManger = "kubez-autoscaler"
-)
+	// KubezRootPrefix + KubezAnnotationSeparator + AnnotationPrefix
+
+	return kubezAnnotations, nil
+}
