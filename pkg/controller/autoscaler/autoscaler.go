@@ -405,7 +405,7 @@ func (ac *AutoscalerController) parseFromReference(hpa *autoscalingv2.Horizontal
 func (ac *AutoscalerController) enqueue(hpa *autoscalingv2.HorizontalPodAutoscaler) {
 	key, err := controller.KeyFunc(hpa)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", hpa, err))
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", hpa, err))
 		return
 	}
 
