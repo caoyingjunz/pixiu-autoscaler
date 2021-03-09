@@ -261,63 +261,60 @@ func (ac *AutoscalerController) addDeployment(obj interface{}) {
 	}
 }
 
-func (ac *AutoscalerController) updateDeployment(old, current interface{}) {
+func (ac *AutoscalerController) updateDeployment(old, new interface{}) {
 	oldD := old.(*apps.Deployment)
-	curD := current.(*apps.Deployment)
-	klog.V(0).Infof("Updating Deployment %s/%s", oldD.Namespace, curD.Name)
+	newD := new.(*apps.Deployment)
+	klog.V(0).Infof("Updating Deployment %s/%s", oldD.Namespace, oldD.Name)
 
-	oldAnnotations := oldD.Annotations
-	curAnnotations := curD.Annotations
-	if reflect.DeepEqual(oldAnnotations, curAnnotations) {
+	oldHPA := ac.GetHorizontalPodAutoscalerForDeployment(oldD)
+	newHPA := ac.GetHorizontalPodAutoscalerForDeployment(newD)
+
+	// Do noting, return directly
+	if oldHPA == nil && newHPA == nil {
 		return
 	}
 
-	oldMaxReplicas, oldOk := oldAnnotations[controller.MaxReplicas]
-	curMaxReplicas, curOk := curAnnotations[controller.MaxReplicas]
-
-	if oldOk && curOk {
-		if oldMaxReplicas != curMaxReplicas {
-			// UPDATE
-			maxReplicasInt, err := strconv.ParseInt(curMaxReplicas, 10, 32)
-			if err != nil || maxReplicasInt == 0 {
-				klog.Errorf("maxReplicas is requred")
-				return
-			}
-			hpa, err := ac.client.AutoscalingV2beta2().
-				HorizontalPodAutoscalers(oldD.Namespace).
-				Get(context.TODO(), oldD.Name, metav1.GetOptions{})
-			if err != nil {
-				// HPA 不存在
-				curHpa := controller.CreateHorizontalPodAutoscaler(curD.Name, curD.Namespace, curD.UID, "apps/v1", "Deployment", int32(maxReplicasInt))
-				_, err := ac.client.AutoscalingV2beta2().
-					HorizontalPodAutoscalers(curD.Namespace).
-					Create(context.TODO(), curHpa, metav1.CreateOptions{})
-				klog.Error(err)
-				return
-			}
-			hpa.Spec.MaxReplicas = int32(maxReplicasInt)
-			_, err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(curD.Namespace).Update(context.TODO(), hpa, metav1.UpdateOptions{})
-			if err != nil {
-				klog.Error(err)
-			}
-		}
-	} else if oldOk && !curOk {
-		// DELETE HPA
-		ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(oldD.Namespace).Delete(context.TODO(), oldD.Name, metav1.DeleteOptions{})
-	} else if !oldOk && curOk {
-		// CREATE HPA
-		maxReplicasInt, err := strconv.ParseInt(curMaxReplicas, 10, 32)
-		if err != nil || maxReplicasInt == 0 {
-			klog.Errorf("maxReplicas is requred")
+	// Add
+	if oldHPA == nil && newHPA != nil {
+		key, err := controller.KeyFunc(newHPA)
+		if err != nil {
 			return
 		}
-		hpa := controller.CreateHorizontalPodAutoscaler(curD.Name, curD.Namespace, curD.UID, "apps/v1", "Deployment", int32(maxReplicasInt))
-		_, err = ac.client.AutoscalingV2beta2().
-			HorizontalPodAutoscalers(curD.Namespace).
-			Create(context.TODO(), hpa, metav1.CreateOptions{})
+		ac.InsertKubezAnnotation(newHPA, AddEvent)
+		ac.store.Add(key, newHPA)
+
+		ac.enqueueAutoscaler(newHPA)
+		return
+	}
+
+	// Delete
+	if oldHPA != nil && newHPA == nil {
+		key, err := controller.KeyFunc(oldHPA)
 		if err != nil {
-			klog.Error(err)
+			return
 		}
+		ac.InsertKubezAnnotation(oldHPA, DeleteEvent)
+		ac.store.Add(key, oldHPA)
+
+		ac.enqueueAutoscaler(oldHPA)
+		return
+	}
+
+	// Update
+	if oldHPA != nil && newHPA != nil {
+		if reflect.DeepEqual(oldHPA.Spec, newHPA.Spec) {
+			// No need to updated
+			return
+		}
+
+		key, err := controller.KeyFunc(newHPA)
+		if err != nil {
+			return
+		}
+		ac.InsertKubezAnnotation(newHPA, UpdateEvent)
+		ac.store.Add(key, newHPA)
+
+		ac.enqueueAutoscaler(newHPA)
 	}
 }
 
@@ -338,7 +335,7 @@ func (ac *AutoscalerController) deleteDeployment(obj interface{}) {
 }
 
 func (ac *AutoscalerController) GetHorizontalPodAutoscalerForDeployment(d *apps.Deployment) *autoscalingv2.HorizontalPodAutoscaler {
-	if d.Annotations == nil {
+	if d == nil || d.Annotations == nil {
 		return nil
 	}
 
