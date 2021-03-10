@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"strconv"
 	"time"
 
 	apps "k8s.io/api/apps/v1"
@@ -387,20 +386,12 @@ func (ac *AutoscalerController) GetHorizontalPodAutoscalerForDeployment(d *apps.
 	if d == nil || d.Annotations == nil {
 		return nil, nil
 	}
-
-	// TODO: 暂时只判断是否含有 MaxReplicas
-	maxReplicas, ok := d.Annotations[controller.MaxReplicas]
-	if !ok {
-		return nil, nil
+	hpaAnnotations, err := controller.PrecheckAndFilterAnnotations(d.Annotations)
+	if err != nil {
+		return nil, err
 	}
 
-	// TODO: ignore the error for now
-	maxReplicasInt, err := strconv.ParseInt(maxReplicas, 10, 32)
-	if err != nil || maxReplicasInt == 0 {
-		return nil, nil
-	}
-
-	hpa := controller.CreateHorizontalPodAutoscaler(d.Name, d.Namespace, d.UID, APIVersion, Deployment, int32(maxReplicasInt))
+	hpa := controller.CreateHorizontalPodAutoscaler(d.Name, d.Namespace, d.UID, APIVersion, Deployment, hpaAnnotations)
 
 	return hpa, nil
 }

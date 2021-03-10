@@ -2,8 +2,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    kubez.autoscaler.minReplicas: "1"
-    kubez.autoscaler.maxReplicas: "3"
+    hpa.caoyingjunz.autoscaler/metricType: cpu
+    hpa.caoyingjunz.autoscaler/minReplicas: "1"
+    hpa.caoyingjunz.autoscaler/maxReplicas: "3"
+    hpa.caoyingjunz.autoscaler/targetAverageUtilization: "90"
   labels:
     app: test1
   name: test1
