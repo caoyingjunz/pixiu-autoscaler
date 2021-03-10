@@ -16,21 +16,52 @@ limitations under the License.
 
 package controller
 
-const (
-	KubezRootPrefix                 string = "hpa.caoyingjunz.autoscaler"
-	KubezAnnotationSeparator        string = "/"
-	kubezCpuAnnotationPrefix        string = "cpu"
-	kubezMemoryAnnotationPrefix     string = "memory"
-	kubezPrometheusAnnotationPrefix string = "prometheus"
+import "fmt"
 
-	MinReplicas                    string = "minReplicas"
-	MaxReplicas                    string = "maxReplicas"
-	TargetCPUUtilizationPercentage string = "targetCPUUtilizationPercentage"
+const (
+	KubezRootPrefix string = "hpa.caoyingjunz.io"
+	KubezSeparator  string = "/"
+
+	kubezCpuPrefix        string = "cpu"
+	kubezMemoryPrefix     string = "memory"
+	kubezPrometheusPrefix string = "prometheus"
+
+	MinReplicas        string = "minReplicas"
+	MaxReplicas        string = "maxReplicas"
+	AverageUtilization string = "AverageUtilization"
 )
 
 func PrecheckAndFilterAnnotations(annotations map[string]string) (map[string]string, error) {
 	kubezAnnotations := make(map[string]string)
-	//TODO KubezRootPrefix + KubezAnnotationSeparator + AnnotationPrefix
+	metricType, exists := annotations[KubezRootPrefix+KubezAnnotationSeparator]
+	if !exists {
+		return nil, fmt.Errorf("hpa.caoyingjunz.autoscaler/metricType required")
+	}
+	kubezAnnotations[KubezRootPrefix+KubezAnnotationSeparator+KubezMetricName] = metricType
+
+	switch metricType {
+	case kubezCpuAnnotationPrefix:
+		// TODO: 需要检查 minReplicas 和 maxReplicas 的类型
+		minReplicas, exists := annotations[KubezRootPrefix+KubezAnnotationSeparator+MinReplicas]
+		if !exists {
+			minReplicas = "1"
+		}
+		kubezAnnotations[KubezRootPrefix+KubezAnnotationSeparator+MinReplicas] = minReplicas
+
+		maxReplicas, exists := annotations[KubezRootPrefix+KubezAnnotationSeparator+MaxReplicas]
+		if !exists {
+			return nil, fmt.Errorf("hpa.caoyingjunz.autoscaler/MaxReplicas required")
+		}
+		kubezAnnotations[KubezRootPrefix+KubezAnnotationSeparator+MaxReplicas] = maxReplicas
+
+		targetCPUUtilizationPercentage, exists := annotations[KubezRootPrefix+KubezAnnotationSeparator+TargetAverageUtilization]
+		if !exists {
+			targetCPUUtilizationPercentage = "80"
+		}
+		kubezAnnotations[KubezRootPrefix+KubezAnnotationSeparator+TargetAverageUtilization] = targetCPUUtilizationPercentage
+	default:
+		return nil, fmt.Errorf("hpa.caoyingjunz.autoscaler/metricType is valided")
+	}
 
 	return kubezAnnotations, nil
 }
