@@ -405,27 +405,6 @@ func (ac *AutoscalerController) GetHorizontalPodAutoscalerForDeployment(d *apps.
 	return hpa, nil
 }
 
-// Parse KubeAutoscaler from the given kubernetes resources, the resources could be
-// Deployment, ReplicaSet, StatefulSet, or ReplicationController.
-func (ac *AutoscalerController) parseFromReference(hpa *autoscalingv2.HorizontalPodAutoscaler) (controller.KubeAutoscaler, error) {
-	kac := controller.KubeAutoscaler{
-		APIVersion: APIVersion,
-		Kind:       hpa.Spec.ScaleTargetRef.Kind,
-	}
-
-	switch hpa.Spec.ScaleTargetRef.Kind {
-	case "Deployment":
-		deployment, err := ac.client.AppsV1().Deployments(hpa.Namespace).Get(context.TODO(), hpa.Name, metav1.GetOptions{})
-		if err != nil {
-			return kac, err
-		}
-
-		kac.UID = deployment.UID
-		kac.Annotations = deployment.Annotations
-	}
-	return kac, nil
-}
-
 func (ac *AutoscalerController) enqueue(hpa *autoscalingv2.HorizontalPodAutoscaler) {
 	key, err := controller.KeyFunc(hpa)
 	if err != nil {

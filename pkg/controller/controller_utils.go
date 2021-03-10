@@ -67,14 +67,6 @@ func (b SimpleControllerClientBuilder) ClientOrDie(name string) clientset.Interf
 	return client
 }
 
-// KubeAutoscaler is responsible for HPA objects stored.
-type KubeAutoscaler struct {
-	APIVersion  string
-	Kind        string
-	UID         types.UID
-	Annotations map[string]string
-}
-
 func CreateHorizontalPodAutoscaler(
 	name string,
 	namespace string,
