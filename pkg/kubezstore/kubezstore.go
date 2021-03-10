@@ -16,34 +16,38 @@ limitations under the License.
 
 package kubezstore
 
-import "sync"
+import (
+	"sync"
+
+	autoscalingv2 "k8s.io/api/autoscaling/v2beta2"
+)
 
 type SafeStoreInterface interface {
-	Add(key string, obj interface{})
-	Update(key string, obj interface{})
+	Add(key string, obj *autoscalingv2.HorizontalPodAutoscaler)
+	Update(key string, obj *autoscalingv2.HorizontalPodAutoscaler)
 	Delete(key string)
-	Get(key string) (interface{}, bool)
+	Get(key string) (*autoscalingv2.HorizontalPodAutoscaler, bool)
 }
 
 type SafeStore struct {
 	lock  sync.RWMutex
-	items map[string]interface{}
+	items map[string]*autoscalingv2.HorizontalPodAutoscaler
 }
 
-func (s *SafeStore) Get(key string) (interface{}, bool) {
+func (s *SafeStore) Get(key string) (*autoscalingv2.HorizontalPodAutoscaler, bool) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	item, exists := s.items[key]
 	return item, exists
 }
 
-func (s *SafeStore) Add(key string, obj interface{}) {
+func (s *SafeStore) Add(key string, obj *autoscalingv2.HorizontalPodAutoscaler) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	s.items[key] = obj
 }
 
-func (s *SafeStore) Update(key string, obj interface{}) {
+func (s *SafeStore) Update(key string, obj *autoscalingv2.HorizontalPodAutoscaler) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	s.items[key] = obj
@@ -59,6 +63,6 @@ func (s *SafeStore) Delete(key string) {
 
 func NewSafeStore() SafeStoreInterface {
 	return &SafeStore{
-		items: map[string]interface{}{},
+		items: map[string]*autoscalingv2.HorizontalPodAutoscaler{},
 	}
 }

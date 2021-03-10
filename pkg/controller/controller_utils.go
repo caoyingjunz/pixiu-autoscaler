@@ -101,9 +101,6 @@ func CreateHorizontalPodAutoscaler(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
-			Labels: map[string]string{
-				KubezHpaController: KubezManger,
-			},
 			OwnerReferences: []metav1.OwnerReference{
 				ownerReference,
 			},

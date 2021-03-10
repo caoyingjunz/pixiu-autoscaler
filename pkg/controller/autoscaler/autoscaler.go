@@ -179,14 +179,13 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 	// Delete the obj from store even though the syncAutoscalers failed
 	defer ac.store.Delete(key)
 
-	obj, exists := ac.store.Get(key)
+	hpa, exists := ac.store.Get(key)
 	if !exists {
 		// Do nothing and return directly
 		return nil
 	}
 
 	var err error
-	hpa := obj.(*autoscalingv2.HorizontalPodAutoscaler)
 	event := ac.PopKubezAnnotation(hpa)
 
 	switch event {
@@ -232,7 +231,7 @@ func (ac *AutoscalerController) InsertKubezAnnotation(hpa *autoscalingv2.Horizon
 // To pop kubez annotation and clean up kubez marker from HPA
 func (ac *AutoscalerController) PopKubezAnnotation(hpa *autoscalingv2.HorizontalPodAutoscaler) string {
 	event, exists := hpa.Annotations[kubezEvent]
-	// event must be exists
+	// This shouldn't happen, because we only insert annotation for hpa
 	if exists {
 		delete(hpa.Annotations, kubezEvent)
 	}
