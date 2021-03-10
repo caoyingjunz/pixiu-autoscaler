@@ -1,1 +1,2 @@
 # kubez-autoscaler
+ss
