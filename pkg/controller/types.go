@@ -17,20 +17,36 @@ limitations under the License.
 package controller
 
 const (
-	KubezRootPrefix                 string = "hpa.caoyingjunz.autoscaler"
-	KubezAnnotationSeparator        string = "/"
-	kubezCpuAnnotationPrefix        string = "cpu"
-	kubezMemoryAnnotationPrefix     string = "memory"
-	kubezPrometheusAnnotationPrefix string = "prometheus"
+	KubezRootPrefix string = "hpa.caoyingjunz.io"
+	KubezSeparator  string = "/"
 
-	MinReplicas                    string = "minReplicas"
-	MaxReplicas                    string = "maxReplicas"
-	TargetCPUUtilizationPercentage string = "targetCPUUtilizationPercentage"
+	kubezCpuPrefix        string = "cpu"
+	kubezMemoryPrefix     string = "memory"
+	kubezPrometheusPrefix string = "prometheus"
+
+	MinReplicas        string = "minReplicas"
+	MaxReplicas        string = "maxReplicas"
+	AverageUtilization string = "AverageUtilization"
 )
 
 func PrecheckAndFilterAnnotations(annotations map[string]string) (map[string]string, error) {
 	kubezAnnotations := make(map[string]string)
-	//TODO KubezRootPrefix + KubezAnnotationSeparator + AnnotationPrefix
+
+	averageUtilization := annotations["cpu."+KubezRootPrefix+KubezSeparator+AverageUtilization]
+
+	kubezAnnotations["cpu."+KubezRootPrefix+KubezSeparator+AverageUtilization] = averageUtilization
+	// TODO: 需要检查 minReplicas 和 maxReplicas 的类型
+	minReplicas, exists := annotations["hpa.caoyingjunz.io/minReplicas"]
+	if !exists {
+		minReplicas = "1"
+	}
+	kubezAnnotations["hpa.caoyingjunz.io/minReplicas"] = minReplicas
+
+	maxReplicas, exists := annotations["hpa.caoyingjunz.io/maxReplicas"]
+	if !exists {
+		maxReplicas = "6"
+	}
+	kubezAnnotations["hpa.caoyingjunz.io/maxReplicas"] = maxReplicas
 
 	return kubezAnnotations, nil
 }
