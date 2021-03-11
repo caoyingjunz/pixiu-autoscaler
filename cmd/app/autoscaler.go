@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package app implements a Server object for running the autoscaler.
 package app
 
 import (
@@ -23,8 +24,10 @@ import (
 
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/informers"
+	"k8s.io/klog"
 
 	"github.com/caoyingjunz/kubez-autoscaler/cmd/app/config"
+	"github.com/caoyingjunz/kubez-autoscaler/cmd/app/options"
 	"github.com/caoyingjunz/kubez-autoscaler/pkg/controller"
 	"github.com/caoyingjunz/kubez-autoscaler/pkg/controller/autoscaler"
 )
@@ -35,6 +38,11 @@ const (
 
 // NewAutoscalerCommand creates a *cobra.Command object with default parameters
 func NewAutoscalerCommand() *cobra.Command {
+	opts, err := options.NewKubezOptions()
+	if err != nil {
+		klog.Fatalf("unable to initialize command options: %v", err)
+	}
+
 	cmd := &cobra.Command{
 		Use: "kubez-autoscaler",
 		Long: `The kubez autoscaler manager is a daemon than embeds

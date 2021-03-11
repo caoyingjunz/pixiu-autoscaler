@@ -15,3 +15,34 @@ limitations under the License.
 */
 
 package options
+
+import (
+	cliflag "k8s.io/component-base/cli/flag"
+
+	"github.com/caoyingjunz/kubez-autoscaler/cmd/app/config"
+)
+
+// Options has all the params needed to run a Autoscaler
+// TODO: for new, the params is just LeaderElection
+type Options struct {
+	ComponentConfig config.KubezConfiguration
+}
+
+func NewKubezOptions() (*Options, error) {
+
+	cfg := config.KubezConfiguration{}
+	o := &Options{
+		ComponentConfig: cfg,
+	}
+
+	return o, nil
+}
+
+// Flags returns flags for a specific scheduler by section name
+func (o *Options) Flags() (nfs cliflag.NamedFlagSets) {
+	fs := nfs.FlagSets("misc")
+
+	config.BindFlags(&o.ComponentConfig.LeaderElection.LeaderElectionConfiguration, nfs.FlagSet("leader election"))
+
+	return nfs
+}
