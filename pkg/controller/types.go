@@ -24,29 +24,32 @@ const (
 	kubezMemoryPrefix     string = "memory"
 	kubezPrometheusPrefix string = "prometheus"
 
-	MinReplicas        string = "minReplicas"
-	MaxReplicas        string = "maxReplicas"
-	AverageUtilization string = "AverageUtilization"
+	MinReplicas        string = "hpa.caoyingjunz.io/minReplicas"
+	MaxReplicas        string = "hpa.caoyingjunz.io/maxReplicas"
+	AverageUtilization string = "hpa.caoyingjunz.io/AverageUtilization"
 )
 
-func PrecheckAndFilterAnnotations(annotations map[string]string) (map[string]string, error) {
-	kubezAnnotations := make(map[string]string)
+func PrecheckAndFilterAnnotations(annotations map[string]string) (map[string]int32, error) {
+	hpaAnnotations := make(map[string]int32)
 
-	averageUtilization := annotations["cpu."+KubezRootPrefix+KubezSeparator+AverageUtilization]
+	averageUtilization, exists := annotations["cpu."+AverageUtilization]
+	if !exists {
+		return nil, nil
+	}
 
-	kubezAnnotations["cpu."+KubezRootPrefix+KubezSeparator+AverageUtilization] = averageUtilization
+	hpaAnnotations["cpu."+AverageUtilization] = averageUtilization
 	// TODO: 需要检查 minReplicas 和 maxReplicas 的类型
-	minReplicas, exists := annotations["hpa.caoyingjunz.io/minReplicas"]
+	minReplicas, exists := annotations[MinReplicas]
 	if !exists {
 		minReplicas = "1"
 	}
-	kubezAnnotations["hpa.caoyingjunz.io/minReplicas"] = minReplicas
+	hpaAnnotations[MinReplicas] = minReplicas
 
-	maxReplicas, exists := annotations["hpa.caoyingjunz.io/maxReplicas"]
+	maxReplicas, exists := annotations[MaxReplicas]
 	if !exists {
 		maxReplicas = "6"
 	}
-	kubezAnnotations["hpa.caoyingjunz.io/maxReplicas"] = maxReplicas
+	hpaAnnotations[MaxReplicas] = maxReplicas
 
-	return kubezAnnotations, nil
+	return hpaAnnotations, nil
 }
