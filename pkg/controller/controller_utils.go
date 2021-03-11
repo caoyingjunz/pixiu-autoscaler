@@ -123,7 +123,7 @@ func CreateHorizontalPodAutoscaler(
 			Name: v1.ResourceCPU,
 			Target: autoscalingv2.MetricTarget{
 				Type:               autoscalingv2.UtilizationMetricType,
-				AverageUtilization: utilpointer.Int32Ptr(annotations["cpu."+AverageUtilization]),
+				AverageUtilization: utilpointer.Int32Ptr(annotations[cpuAverageUtilization]),
 			},
 		},
 	}
