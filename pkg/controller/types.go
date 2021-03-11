@@ -32,7 +32,10 @@ const (
 func PrecheckAndFilterAnnotations(annotations map[string]string) (map[string]string, error) {
 	kubezAnnotations := make(map[string]string)
 
-	averageUtilization := annotations["cpu."+KubezRootPrefix+KubezSeparator+AverageUtilization]
+	averageUtilization, exists := annotations["cpu."+KubezRootPrefix+KubezSeparator+AverageUtilization]
+	if !exists {
+		return nil, nil
+	}
 
 	kubezAnnotations["cpu."+KubezRootPrefix+KubezSeparator+AverageUtilization] = averageUtilization
 	// TODO: 需要检查 minReplicas 和 maxReplicas 的类型
