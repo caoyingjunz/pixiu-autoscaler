@@ -15,3 +15,19 @@ limitations under the License.
 */
 
 package options
+
+import (
+	"github.com/caoyingjunz/kubez-autoscaler/cmd/app/config"
+)
+
+// Options has all the params needed to run a Autoscaler
+// TODO: for new, the params is just LeaderElection
+type Options struct {
+	ComponentConfig config.KubezConfiguration
+}
+
+func NewKubezOptions() (*Options, error) {
+	o := &Options{}
+
+	return o, nil
+}
