@@ -15,3 +15,14 @@ limitations under the License.
 */
 
 package options
+
+// Options has all the params needed to run a Autoscaler
+type Options struct {
+}
+
+func NewKubezOptions() (*Options, error) {
+
+	o := &Options{}
+
+	return o, nil
+}
