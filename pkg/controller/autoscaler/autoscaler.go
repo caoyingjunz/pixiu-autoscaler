@@ -54,11 +54,12 @@ const (
 	UpdateEvent string = "Update"
 	DeleteEvent string = "Delete"
 
-	kubezEvent string = "kubezevent"
+	kubezEvent string = "kubezEvent"
 )
 
+const APIVersion string = "apps/v1"
+
 const (
-	APIVersion              string = "apps/v1"
 	Deployment              string = "Deployment"
 	StatefulSet             string = "StatefulSet"
 	HorizontalPodAutoscaler string = "HorizontalPodAutoscaler"
@@ -388,7 +389,10 @@ func (ac *AutoscalerController) GetHorizontalPodAutoscalerForDeployment(d *apps.
 	}
 	hpaAnnotations, err := controller.PrecheckAndFilterAnnotations(d.Annotations)
 	if err != nil {
-		return nil, err
+		return nil, nil
+	}
+	if len(hpaAnnotations) == 0 {
+		return nil, nil
 	}
 
 	hpa := controller.CreateHorizontalPodAutoscaler(d.Name, d.Namespace, d.UID, APIVersion, Deployment, hpaAnnotations)

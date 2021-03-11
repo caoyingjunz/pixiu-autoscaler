@@ -17,8 +17,6 @@ limitations under the License.
 package controller
 
 import (
-	"strconv"
-
 	autoscalingv2 "k8s.io/api/autoscaling/v2beta2"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -83,12 +81,7 @@ func CreateHorizontalPodAutoscaler(
 	uid types.UID,
 	apiVersion string,
 	kind string,
-	annotations map[string]string) *autoscalingv2.HorizontalPodAutoscaler {
-
-	minReplicasInt64, _ := strconv.ParseInt(annotations["hpa.caoyingjunz.io/minReplicas"], 10, 32)
-	maxReplicasInt64, _ := strconv.ParseInt(annotations["hpa.caoyingjunz.io/maxReplicas"], 10, 32)
-	averageUtilizationInt64, _ := strconv.ParseInt(annotations["cpu."+KubezRootPrefix+KubezSeparator+AverageUtilization], 10, 32)
-
+	annotations map[string]int32) *autoscalingv2.HorizontalPodAutoscaler {
 	controller := true
 	blockOwnerDeletion := true
 	ownerReference := metav1.OwnerReference{
@@ -113,8 +106,8 @@ func CreateHorizontalPodAutoscaler(
 			},
 		},
 		Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
-			MinReplicas: utilpointer.Int32Ptr(int32(minReplicasInt64)),
-			MaxReplicas: int32(maxReplicasInt64),
+			MinReplicas: utilpointer.Int32Ptr(annotations[MinReplicas]),
+			MaxReplicas: annotations[MaxReplicas],
 			ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
 				APIVersion: apiVersion,
 				Kind:       kind,
@@ -130,7 +123,7 @@ func CreateHorizontalPodAutoscaler(
 			Name: v1.ResourceCPU,
 			Target: autoscalingv2.MetricTarget{
 				Type:               autoscalingv2.UtilizationMetricType,
-				AverageUtilization: utilpointer.Int32Ptr(int32(averageUtilizationInt64)),
+				AverageUtilization: utilpointer.Int32Ptr(annotations["cpu."+AverageUtilization]),
 			},
 		},
 	}
