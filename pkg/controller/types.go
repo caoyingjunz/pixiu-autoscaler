@@ -29,17 +29,20 @@ const (
 	MinReplicas        string = "hpa.caoyingjunz.io/minReplicas"
 	MaxReplicas        string = "hpa.caoyingjunz.io/maxReplicas"
 	AverageUtilization string = "hpa.caoyingjunz.io/AverageUtilization"
+
+	cpuAverageUtilization    = kubezCpuPrefix + "." + AverageUtilization
+	memoryAverageUtilization = kubezMemoryPrefix + "." + AverageUtilization
 )
 
 func PrecheckAndFilterAnnotations(annotations map[string]string) (map[string]int32, error) {
 	hpaAnnotations := make(map[string]int32)
 
-	averageUtilization, exists := annotations["cpu."+AverageUtilization]
+	averageUtilization, exists := annotations[cpuAverageUtilization]
 	if !exists {
 		return nil, nil
 	}
 	averageUtilizationInt64, _ := strconv.ParseInt(averageUtilization, 10, 32)
-	hpaAnnotations["cpu."+AverageUtilization] = int32(averageUtilizationInt64)
+	hpaAnnotations[cpuAverageUtilization] = int32(averageUtilizationInt64)
 
 	minReplicas, exists := annotations[MinReplicas]
 	if !exists {

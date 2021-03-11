@@ -50,16 +50,18 @@ import (
 const (
 	maxRetries = 15
 
-	AddEvent    string = "Add"
-	UpdateEvent string = "Update"
-	DeleteEvent string = "Delete"
+	AddEvent           string = "Add"
+	UpdateEvent        string = "Update"
+	DeleteEvent        string = "Delete"
+	RecoverDeleteEvent string = "RecoverDelete"
+	RecoverUpdateEvent string = "RecoverUpdate"
 
 	kubezEvent string = "kubezEvent"
 )
 
-const APIVersion string = "apps/v1"
-
 const (
+	APIVersion string = "apps/v1"
+
 	Deployment              string = "Deployment"
 	StatefulSet             string = "StatefulSet"
 	HorizontalPodAutoscaler string = "HorizontalPodAutoscaler"
@@ -210,8 +212,38 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 			// The HPA has deleted
 			return nil
 		}
-	default:
-		return fmt.Errorf("unknow HPA: %s/%s event", hpa.Namespace, hpa.Name)
+	case RecoverUpdateEvent:
+		klog.V(2).Infof("Recovering HPA: %s/%s from updated", hpa.Namespace, hpa.Name)
+
+	case RecoverDeleteEvent:
+		klog.V(2).Infof("Recovering HPA: %s/%s from deleted", hpa.Namespace, hpa.Name)
+		deploy, err := ac.client.AppsV1().Deployments(hpa.Namespace).Get(context.TODO(), hpa.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+
+		isOwner := false
+		for _, ownerReference := range hpa.OwnerReferences {
+			if deploy.UID == ownerReference.UID {
+				isOwner = true
+				break
+			}
+		}
+		if !isOwner {
+			return nil
+		}
+
+		hpa, err = ac.GetHorizontalPodAutoscalerForDeployment(deploy)
+		if err != nil {
+			return err
+		}
+
+		if hpa != nil {
+			_, err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(hpa.Namespace).Create(context.TODO(), hpa, metav1.CreateOptions{})
+			if errors.IsAlreadyExists(err) {
+				return nil
+			}
+		}
 	}
 
 	return err
@@ -257,7 +289,7 @@ func (ac *AutoscalerController) updateHPA(old, cur interface{}) {
 		return
 	}
 	// To insert annotation to distinguish the event type is Update
-	ac.InsertKubezAnnotation(curH, UpdateEvent)
+	ac.InsertKubezAnnotation(curH, RecoverUpdateEvent)
 	ac.store.Update(key, curH)
 
 	ac.enqueueAutoscaler(curH)
@@ -271,7 +303,7 @@ func (ac *AutoscalerController) deleteHPA(obj interface{}) {
 	if err != nil {
 		return
 	}
-	ac.InsertKubezAnnotation(h, DeleteEvent)
+	ac.InsertKubezAnnotation(h, RecoverDeleteEvent)
 	ac.store.Update(key, h)
 
 	ac.enqueueAutoscaler(h)
@@ -389,7 +421,7 @@ func (ac *AutoscalerController) GetHorizontalPodAutoscalerForDeployment(d *apps.
 	}
 	hpaAnnotations, err := controller.PrecheckAndFilterAnnotations(d.Annotations)
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 	if len(hpaAnnotations) == 0 {
 		return nil, nil
@@ -400,25 +432,27 @@ func (ac *AutoscalerController) GetHorizontalPodAutoscalerForDeployment(d *apps.
 	return hpa, nil
 }
 
-// Parse KubeAutoscaler from the given kubernetes resources, the resources could be
+// Get KubeAutoscaler from the given kubernetes resources, the resources could be
 // Deployment, ReplicaSet, StatefulSet, or ReplicationController.
-func (ac *AutoscalerController) parseFromReference(hpa *autoscalingv2.HorizontalPodAutoscaler) (controller.KubeAutoscaler, error) {
-	kac := controller.KubeAutoscaler{
+func (ac *AutoscalerController) GetItemsFromHPA(hpa *autoscalingv2.HorizontalPodAutoscaler) (*controller.KubeAutoscaler, error) {
+	targetKind := hpa.Spec.ScaleTargetRef.Kind
+
+	kas := &controller.KubeAutoscaler{
 		APIVersion: APIVersion,
-		Kind:       hpa.Spec.ScaleTargetRef.Kind,
+		Kind:       targetKind,
 	}
 
-	switch hpa.Spec.ScaleTargetRef.Kind {
-	case "Deployment":
+	switch targetKind {
+	case Deployment:
 		deployment, err := ac.client.AppsV1().Deployments(hpa.Namespace).Get(context.TODO(), hpa.Name, metav1.GetOptions{})
 		if err != nil {
-			return kac, err
+			return nil, err
 		}
 
-		kac.UID = deployment.UID
-		kac.Annotations = deployment.Annotations
+		kas.UID = deployment.UID
+		kas.Annotations = deployment.Annotations
 	}
-	return kac, nil
+	return kas, nil
 }
 
 func (ac *AutoscalerController) enqueue(hpa *autoscalingv2.HorizontalPodAutoscaler) {
