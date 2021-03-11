@@ -19,23 +19,18 @@ package app
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/informers"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/util/homedir"
 
+	"github.com/caoyingjunz/kubez-autoscaler/cmd/app/config"
 	"github.com/caoyingjunz/kubez-autoscaler/pkg/controller"
 	"github.com/caoyingjunz/kubez-autoscaler/pkg/controller/autoscaler"
 )
 
 const (
 	workers = 5
-
-	kubezHomeConfig = ".kube/config"
 )
 
 // NewAutoscalerCommand creates a *cobra.Command object with default parameters
@@ -67,13 +62,13 @@ func Run() error {
 	stopCh := make(chan struct{})
 	defer close(stopCh)
 
-	config, err := buildConfig()
+	kubeConfig, err := config.BuildKubeConfig()
 	if err != nil {
 		return err
 	}
 
 	clientBuilder := controller.SimpleControllerClientBuilder{
-		ClientConfig: config,
+		ClientConfig: kubeConfig,
 	}
 
 	versionedClient := clientBuilder.ClientOrDie("shared-informers")
@@ -92,18 +87,4 @@ func Run() error {
 	select {}
 
 	return nil
-}
-
-// Build the kubeconfig from in-cluster-config at first; if failed,
-// Try to get it from home dir.
-func buildConfig() (*rest.Config, error) {
-	var config *rest.Config
-	var err error
-
-	config, err = rest.InClusterConfig()
-	if err == nil {
-		return config, nil
-	}
-
-	return clientcmd.BuildConfigFromFlags("", filepath.Join(homedir.HomeDir(), kubezHomeConfig))
 }
