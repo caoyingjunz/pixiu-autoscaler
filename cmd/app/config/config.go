@@ -19,14 +19,29 @@ package config
 import (
 	"path/filepath"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
+	componentbaseconfig "k8s.io/component-base/config"
 )
 
 const (
 	kubezHomeConfig = ".kube/config"
 )
+
+// KubezLeaderElectionConfiguration expands LeaderElectionConfiguration
+// to include scheduler specific configuration.
+type KubezLeaderElectionConfiguration struct {
+	componentbaseconfig.LeaderElectionConfiguration
+}
+
+type KubezConfiguration struct {
+	metav1.TypeMeta
+
+	// LeaderElection defines the configuration of leader election client.
+	LeaderElection KubezLeaderElectionConfiguration
+}
 
 // Build the kubeconfig from in-cluster-config at first; if failed,
 // Try to get it from home dir.
