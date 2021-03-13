@@ -19,6 +19,8 @@ package app
 
 import (
 	"fmt"
+	"k8s.io/component-base/cli/globalflag"
+	"k8s.io/component-base/version/verflag"
 	"os"
 	"time"
 
@@ -38,7 +40,7 @@ const (
 
 // NewAutoscalerCommand creates a *cobra.Command object with default parameters
 func NewAutoscalerCommand() *cobra.Command {
-	opts, err := options.NewKubezOptions()
+	s, err := options.NewOptions()
 	if err != nil {
 		klog.Fatalf("unable to initialize command options: %v", err)
 	}
@@ -48,7 +50,13 @@ func NewAutoscalerCommand() *cobra.Command {
 		Long: `The kubez autoscaler manager is a daemon than embeds
 the core control loops shipped with advanced HPA.`,
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := Run(); err != nil {
+			c, err := s.Config()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%v\n", err)
+				os.Exit(1)
+			}
+
+			if err := Run(c); err != nil {
 				fmt.Fprintf(os.Stderr, "%v\n", err)
 				os.Exit(1)
 			}
@@ -62,11 +70,23 @@ the core control loops shipped with advanced HPA.`,
 			return nil
 		},
 	}
+
+	fs := cmd.Flags()
+	namedFlagSets := s.Flags()
+	verflag.AddFlags(namedFlagSets.FlagSet("global"))
+	globalflag.AddGlobalFlags(namedFlagSets.FlagSet("global"), cmd.Name())
+	for _, f := range namedFlagSets.FlagSets {
+		fs.AddFlag(f)
+	}
+
 	return cmd
 }
 
 // Run runs the kubez-autoscaler process. This should never exit.
-func Run() error {
+func Run(c *config.KubezConfiguration) error {
+
+	klog.Infof("test %v", c)
+
 	stopCh := make(chan struct{})
 	defer close(stopCh)
 
