@@ -18,12 +18,16 @@ limitations under the License.
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"time"
 
 	"github.com/spf13/cobra"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/informers"
+	"k8s.io/client-go/tools/leaderelection"
+	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/klog"
 
 	"github.com/caoyingjunz/kubez-autoscaler/cmd/app/config"
@@ -38,7 +42,7 @@ const (
 
 // NewAutoscalerCommand creates a *cobra.Command object with default parameters
 func NewAutoscalerCommand() *cobra.Command {
-	opts, err := options.NewKubezOptions()
+	s, err := options.NewOptions()
 	if err != nil {
 		klog.Fatalf("unable to initialize command options: %v", err)
 	}
@@ -48,7 +52,12 @@ func NewAutoscalerCommand() *cobra.Command {
 		Long: `The kubez autoscaler manager is a daemon than embeds
 the core control loops shipped with advanced HPA.`,
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := Run(); err != nil {
+			c, err := s.Config()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%v\n", err)
+				os.Exit(1)
+			}
+			if err := Run(c); err != nil {
 				fmt.Fprintf(os.Stderr, "%v\n", err)
 				os.Exit(1)
 			}
@@ -66,7 +75,7 @@ the core control loops shipped with advanced HPA.`,
 }
 
 // Run runs the kubez-autoscaler process. This should never exit.
-func Run() error {
+func Run(c *config.KubezConfiguration) error {
 	stopCh := make(chan struct{})
 	defer close(stopCh)
 
@@ -82,17 +91,62 @@ func Run() error {
 	versionedClient := clientBuilder.ClientOrDie("shared-informers")
 	InformerFactory := informers.NewSharedInformerFactory(versionedClient, time.Minute)
 
-	ac, err := autoscaler.NewAutoscalerController(
-		InformerFactory.Apps().V1().Deployments(),
-		InformerFactory.Autoscaling().V1().HorizontalPodAutoscalers(),
-		clientBuilder.ClientOrDie("shared-informers"),
-	)
+	run := func(ctx context.Context) {
+		ac, err := autoscaler.NewAutoscalerController(
+			InformerFactory.Apps().V1().Deployments(),
+			InformerFactory.Autoscaling().V1().HorizontalPodAutoscalers(),
+			clientBuilder.ClientOrDie("shared-informers"),
+		)
+		if err != nil {
+			klog.Fatalf("error new autoscaler controller: %v", err)
+		}
+		go ac.Run(workers, stopCh)
+
+		select {}
+	}
+
+	// TODO
+	leaderElect := true
+	if !leaderElect {
+		run(context.TODO())
+		panic("unreachable")
+	}
+
+	id, err := os.Hostname()
 	if err != nil {
 		return err
 	}
-	go ac.Run(workers, stopCh)
+	// add a uniquifier so that two processes on the same host don't accidentally both become active
+	id = id + "_" + string(uuid.NewUUID())
 
-	select {}
+	rl, err := resourcelock.New("endpointsleases",
+		"kube-system",
+		"kubez-autoscaler-manager",
+		versionedClient.CoreV1(),
+		versionedClient.CoordinationV1(),
+		resourcelock.ResourceLockConfig{
+			Identity: id,
+			//EventRecorder: c.EventRecorder,
+		})
+	if err != nil {
+		klog.Fatalf("error creating lock: %v", err)
+	}
+
+	leaderelection.RunOrDie(context.TODO(), leaderelection.LeaderElectionConfig{
+		Lock:          rl,
+		LeaseDuration: time.Second * 15,
+		RenewDeadline: time.Second * 10,
+		RetryPeriod:   time.Second * 2,
+		Callbacks: leaderelection.LeaderCallbacks{
+			OnStartedLeading: run,
+			OnStoppedLeading: func() {
+				klog.Fatalf("leaderelection lost")
+			},
+		},
+		//WatchDog: electionChecker,
+		Name: "kubez-autoscaler-manager",
+	})
+	panic("unreachable")
 
 	return nil
 }
