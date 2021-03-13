@@ -40,9 +40,15 @@ func NewKubezOptions() (*Options, error) {
 
 // Flags returns flags for a specific scheduler by section name
 func (o *Options) Flags() (nfs cliflag.NamedFlagSets) {
-	fs := nfs.FlagSets("misc")
+	// fs := nfs.FlagSets("misc")
 
 	config.BindFlags(&o.ComponentConfig.LeaderElection.LeaderElectionConfiguration, nfs.FlagSet("leader election"))
 
 	return nfs
+}
+
+func (o *Options) Config() (*config.KubezConfiguration, error) {
+	c := &config.KubezConfiguration{}
+
+	return c, nil
 }
