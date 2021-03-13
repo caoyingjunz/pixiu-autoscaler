@@ -48,7 +48,7 @@ func NewAutoscalerCommand() *cobra.Command {
 		Long: `The kubez autoscaler manager is a daemon than embeds
 the core control loops shipped with advanced HPA.`,
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := Run(); err != nil {
+			if err := Run(opts); err != nil {
 				fmt.Fprintf(os.Stderr, "%v\n", err)
 				os.Exit(1)
 			}
@@ -66,7 +66,10 @@ the core control loops shipped with advanced HPA.`,
 }
 
 // Run runs the kubez-autoscaler process. This should never exit.
-func Run() error {
+func Run(opts *options.Options) error {
+
+	klog.Infof("test %v", opts)
+
 	stopCh := make(chan struct{})
 	defer close(stopCh)
 
