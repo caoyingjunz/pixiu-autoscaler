@@ -449,7 +449,7 @@ func (ac *AutoscalerController) GetHorizontalPodAutoscalerForDeployment(d *apps.
 	if d == nil || d.Annotations == nil {
 		return nil, nil
 	}
-	hpaAnnotations, err := controller.PrecheckAndFilterAnnotations(d.Annotations)
+	hpaAnnotations, err := controller.PreAndExtractAnnotations(d.Annotations)
 	if err != nil {
 		return nil, err
 	}
