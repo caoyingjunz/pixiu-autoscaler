@@ -25,33 +25,55 @@ const (
 	KubezRootPrefix string = "hpa.caoyingjunz.io"
 	KubezSeparator  string = "/"
 
-	kubezCpuPrefix        string = "cpu"
-	kubezMemoryPrefix     string = "memory"
-	kubezPrometheusPrefix string = "prometheus"
+	kubezCpuPrefix        int32 = 1
+	kubezMemoryPrefix     int32 = 2
+	kubezPrometheusPrefix int32 = 3
 
 	MinReplicas        string = "hpa.caoyingjunz.io/minReplicas"
 	MaxReplicas        string = "hpa.caoyingjunz.io/maxReplicas"
 	AverageUtilization string = "hpa.caoyingjunz.io/AverageUtilization"
 
-	cpuAverageUtilization    = kubezCpuPrefix + "." + AverageUtilization
-	memoryAverageUtilization = kubezMemoryPrefix + "." + AverageUtilization
+	cpuAverageUtilization       = "cpu." + AverageUtilization
+	memoryAverageUtilization    = "memory." + AverageUtilization
+	prometheuAverageUtilization = "prometheu." + AverageUtilization
 )
 
-func PrecheckAndFilterAnnotations(annotations map[string]string) (map[string]int32, error) {
+func PrecheckAndExtractAnnotations(annotations map[string]string) (map[string]int32, error) {
 	hpaAnnotations := make(map[string]int32)
 
-	averageUtilization, exists := annotations[cpuAverageUtilization]
-	if !exists {
-		return nil, fmt.Errorf("%s is required", cpuAverageUtilization)
+	// Extract HPA items form annotations
+	var metricType int32
+	for aKey := range annotations {
+		if aKey == cpuAverageUtilization {
+			metricType = kubezCpuPrefix
+			break
+		}
+		if aKey == memoryAverageUtilization {
+			metricType = kubezMemoryPrefix
+			break
+		}
+		if aKey == prometheuAverageUtilization {
+			metricType = kubezPrometheusPrefix
+			break
+		}
 	}
-	averageUtilizationInt64, err := strconv.ParseInt(averageUtilization, 10, 32)
-	if err != nil {
-		return nil, err
+	if metricType == 0 {
+		return nil, fmt.Errorf("%s is required", "xxx."+AverageUtilization)
 	}
-	if averageUtilizationInt64 <= 0 || averageUtilizationInt64 > 100 {
-		return nil, fmt.Errorf("averageUtilization should be range 1, 100")
+	hpaAnnotations["metricType"] = metricType
+
+	var averageUtilizationInt64 int64
+	switch metricType {
+	case kubezCpuPrefix:
+		averageUtilizationInt64, err := strconv.ParseInt(annotations[cpuAverageUtilization], 10, 32)
+		if err != nil {
+			return nil, err
+		}
+		if averageUtilizationInt64 <= 0 || averageUtilizationInt64 > 100 {
+			return nil, fmt.Errorf("averageUtilization should be range 1, 100")
+		}
 	}
-	hpaAnnotations[cpuAverageUtilization] = int32(averageUtilizationInt64)
+	hpaAnnotations[AverageUtilization] = int32(averageUtilizationInt64)
 
 	maxReplicas, exists := annotations[MaxReplicas]
 	if !exists {
