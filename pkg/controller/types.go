@@ -16,7 +16,10 @@ limitations under the License.
 
 package controller
 
-import "strconv"
+import (
+	"fmt"
+	"strconv"
+)
 
 const (
 	KubezRootPrefix string = "hpa.caoyingjunz.io"
@@ -39,24 +42,39 @@ func PrecheckAndFilterAnnotations(annotations map[string]string) (map[string]int
 
 	averageUtilization, exists := annotations[cpuAverageUtilization]
 	if !exists {
-		return nil, nil
+		return nil, fmt.Errorf("%s is required", cpuAverageUtilization)
 	}
-	averageUtilizationInt64, _ := strconv.ParseInt(averageUtilization, 10, 32)
+	averageUtilizationInt64, err := strconv.ParseInt(averageUtilization, 10, 32)
+	if err != nil {
+		return nil, err
+	}
+	if averageUtilizationInt64 <= 0 || averageUtilizationInt64 > 100 {
+		return nil, fmt.Errorf("averageUtilization should be range 1, 100")
+	}
 	hpaAnnotations[cpuAverageUtilization] = int32(averageUtilizationInt64)
-
-	minReplicas, exists := annotations[MinReplicas]
-	if !exists {
-		return nil, nil
-	}
-	minReplicasInt64, _ := strconv.ParseInt(minReplicas, 10, 32)
-	hpaAnnotations[MinReplicas] = int32(minReplicasInt64)
 
 	maxReplicas, exists := annotations[MaxReplicas]
 	if !exists {
-		return nil, nil
+		return nil, fmt.Errorf("%s is required", MaxReplicas)
 	}
-	maxReplicasInt64, _ := strconv.ParseInt(maxReplicas, 10, 32)
+	maxReplicasInt64, err := strconv.ParseInt(maxReplicas, 10, 32)
+	if err != nil {
+		return nil, err
+	}
 	hpaAnnotations[MaxReplicas] = int32(maxReplicasInt64)
+
+	var minReplicasInt64 int64
+	minReplicas, exists := annotations[MinReplicas]
+	if exists {
+		minReplicasInt64, err = strconv.ParseInt(minReplicas, 10, 32)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// Default minReplicas is 1
+		minReplicasInt64 = int64(1)
+	}
+	hpaAnnotations[MinReplicas] = int32(minReplicasInt64)
 
 	return hpaAnnotations, nil
 }
