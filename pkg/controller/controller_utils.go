@@ -28,6 +28,11 @@ import (
 	utilpointer "k8s.io/utils/pointer"
 )
 
+const (
+	HorizontalPodAutoscaler           string = "HorizontalPodAutoscaler"
+	HorizontalPodAutoscalerAPIVersion string = "autoscaling/v2beta2"
+)
+
 var (
 	KeyFunc = cache.DeletionHandlingMetaNamespaceKeyFunc
 )
@@ -95,8 +100,8 @@ func CreateHorizontalPodAutoscaler(
 
 	hpa := &autoscalingv2.HorizontalPodAutoscaler{
 		TypeMeta: metav1.TypeMeta{
-			Kind:       "HorizontalPodAutoscaler",
-			APIVersion: "autoscaling/v2beta2",
+			Kind:       HorizontalPodAutoscaler,
+			APIVersion: HorizontalPodAutoscalerAPIVersion,
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
