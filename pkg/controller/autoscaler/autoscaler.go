@@ -60,7 +60,7 @@ const (
 )
 
 const (
-	APIVersion string = "apps/v1"
+	appsAPIVersion string = "apps/v1"
 
 	Deployment              string = "Deployment"
 	StatefulSet             string = "StatefulSet"
@@ -457,7 +457,7 @@ func (ac *AutoscalerController) GetHorizontalPodAutoscalerForDeployment(d *apps.
 		return nil, nil
 	}
 
-	hpa := controller.CreateHorizontalPodAutoscaler(d.Name, d.Namespace, d.UID, APIVersion, Deployment, hpaAnnotations)
+	hpa := controller.CreateHorizontalPodAutoscaler(d.Name, d.Namespace, d.UID, appsAPIVersion, Deployment, hpaAnnotations)
 
 	return hpa, nil
 }
@@ -468,7 +468,7 @@ func (ac *AutoscalerController) GetItemsFromHPA(hpa *autoscalingv2.HorizontalPod
 	targetKind := hpa.Spec.ScaleTargetRef.Kind
 
 	kas := &controller.KubeAutoscaler{
-		APIVersion: APIVersion,
+		APIVersion: appsAPIVersion,
 		Kind:       targetKind,
 	}
 
