@@ -113,21 +113,36 @@ func CreateHorizontalPodAutoscaler(
 				Kind:       kind,
 				Name:       name,
 			},
+			Metrics: parseMetrics(annotations),
 		},
 	}
 
-	// CPU metric
-	metric := autoscalingv2.MetricSpec{
-		Type: autoscalingv2.ResourceMetricSourceType,
-		Resource: &autoscalingv2.ResourceMetricSource{
-			Name: v1.ResourceCPU,
-			Target: autoscalingv2.MetricTarget{
-				Type:               autoscalingv2.UtilizationMetricType,
-				AverageUtilization: utilpointer.Int32Ptr(annotations[cpuAverageUtilization]),
-			},
-		},
-	}
-
-	hpa.Spec.Metrics = []autoscalingv2.MetricSpec{metric}
 	return hpa
+}
+
+func parseMetrics(annotations map[string]int32) []autoscalingv2.MetricSpec {
+	metrics := make([]autoscalingv2.MetricSpec, 0)
+
+	kubezMetricType := annotations[KubezMetricType]
+	switch kubezMetricType {
+	case kubezCpuPrefix:
+		// CPU metric
+		metric := autoscalingv2.MetricSpec{
+			Type: autoscalingv2.ResourceMetricSourceType,
+			Resource: &autoscalingv2.ResourceMetricSource{
+				Name: v1.ResourceCPU,
+				Target: autoscalingv2.MetricTarget{
+					Type:               autoscalingv2.UtilizationMetricType,
+					AverageUtilization: utilpointer.Int32Ptr(annotations[AverageUtilization]),
+				},
+			},
+		}
+		metrics = append(metrics, metric)
+	case kubezMemoryPrefix:
+		// TODO
+	case kubezPrometheusPrefix:
+		// TODO
+	}
+
+	return metrics
 }
