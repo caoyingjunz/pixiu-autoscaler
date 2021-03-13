@@ -38,7 +38,7 @@ const (
 
 // NewAutoscalerCommand creates a *cobra.Command object with default parameters
 func NewAutoscalerCommand() *cobra.Command {
-	opts, err := options.NewKubezOptions()
+	s, err := options.NewOptions()
 	if err != nil {
 		klog.Fatalf("unable to initialize command options: %v", err)
 	}
@@ -48,7 +48,13 @@ func NewAutoscalerCommand() *cobra.Command {
 		Long: `The kubez autoscaler manager is a daemon than embeds
 the core control loops shipped with advanced HPA.`,
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := Run(); err != nil {
+			c, err := s.Config()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%v\n", err)
+				os.Exit(1)
+			}
+
+			if err := Run(c); err != nil {
 				fmt.Fprintf(os.Stderr, "%v\n", err)
 				os.Exit(1)
 			}
@@ -62,11 +68,12 @@ the core control loops shipped with advanced HPA.`,
 			return nil
 		},
 	}
+
 	return cmd
 }
 
 // Run runs the kubez-autoscaler process. This should never exit.
-func Run() error {
+func Run(c *config.KubezConfiguration) error {
 	stopCh := make(chan struct{})
 	defer close(stopCh)
 

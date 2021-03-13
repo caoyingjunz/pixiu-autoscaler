@@ -21,6 +21,8 @@ import (
 
 	"github.com/spf13/pflag"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/informers"
+	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
@@ -69,6 +71,9 @@ type KubezLeaderElectionConfiguration struct {
 
 type KubezConfiguration struct {
 	metav1.TypeMeta
+
+	Client          clientset.Interface
+	InformerFactory informers.SharedInformerFactory
 
 	// LeaderElection defines the configuration of leader election client.
 	LeaderElection KubezLeaderElectionConfiguration
