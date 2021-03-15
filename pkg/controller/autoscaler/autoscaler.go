@@ -622,12 +622,12 @@ func (ac *AutoscalerController) GetItemsFromHPA(hpa *autoscalingv2.HorizontalPod
 		kas.UID = deployment.UID
 		kas.Annotations = deployment.Annotations
 	case StatefulSet:
-		StatefulSet, err := ac.client.AppsV1().StatefulSets(hpa.Namespace).Get(context.TODO(), hpa.Name, metav1.GetOptions{})
+		statefulSet, err := ac.client.AppsV1().StatefulSets(hpa.Namespace).Get(context.TODO(), hpa.Name, metav1.GetOptions{})
 		if err != nil {
 			return nil, err
 		}
-		kas.UID = StatefulSet.UID
-		kas.Annotations = StatefulSet.Annotations
+		kas.UID = statefulSet.UID
+		kas.Annotations = statefulSet.Annotations
 	}
 	return kas, nil
 }
