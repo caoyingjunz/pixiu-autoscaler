@@ -78,6 +78,8 @@ type AutoscalerController struct {
 
 	// dLister can list/get deployments from the shared informer's store
 	dLister appslisters.DeploymentLister
+
+	sLister appslisters.StatefulSetLister
 	// hpaLister is able to list/get HPAs from the shared informer's cache
 	hpaLister autoscalinglisters.HorizontalPodAutoscalerLister
 
@@ -93,7 +95,7 @@ type AutoscalerController struct {
 }
 
 // NewAutoscalerController creates a new AutoscalerController.
-func NewAutoscalerController(dInformer appsinformers.DeploymentInformer, hpaInformer autoscalinginformers.HorizontalPodAutoscalerInformer, client clientset.Interface) (*AutoscalerController, error) {
+func NewAutoscalerController(dInformer appsinformers.DeploymentInformer, sInformer appsinformers.StatefulSetInformer, hpaInformer autoscalinginformers.HorizontalPodAutoscalerInformer, client clientset.Interface) (*AutoscalerController, error) {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
 	eventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: client.CoreV1().Events("")})
@@ -118,6 +120,13 @@ func NewAutoscalerController(dInformer appsinformers.DeploymentInformer, hpaInfo
 		DeleteFunc: ac.deleteDeployment,
 	})
 
+	//Statefulset
+	sInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: 	ac.addStatefulset,
+		UpdateFunc: ac.updateStatefulset,
+		DeleteFunc: ac.deleteStatefulset,
+	})
+
 	// HorizontalPodAutoscaler
 	hpaInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ac.addHPA,
@@ -126,6 +135,7 @@ func NewAutoscalerController(dInformer appsinformers.DeploymentInformer, hpaInfo
 	})
 
 	ac.dLister = dInformer.Lister()
+	ac.sLister = sInformer.Lister()
 	ac.hpaLister = hpaInformer.Lister()
 
 	// syncAutoscalers
@@ -163,6 +173,14 @@ func (ac *AutoscalerController) Run(workers int, stopCh <-chan struct{}) {
 		DeleteFunc: ac.deleteDeployment,
 	})
 	go deployInformer.Run(stopCh)
+
+	stateInformer := sharedInformers.Apps().V1().StatefulSets().Informer()
+	stateInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:  	ac.addStatefulset,
+		UpdateFunc: ac.updateStatefulset,
+		DeleteFunc: ac.deleteStatefulset,
+	})
+	go stateInformer.Run(stopCh)
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ac.worker, time.Second, stopCh)
@@ -307,6 +325,7 @@ func (ac *AutoscalerController) addHPA(obj interface{}) {}
 func (ac *AutoscalerController) updateHPA(old, cur interface{}) {
 	oldH := old.(*autoscalingv2.HorizontalPodAutoscaler)
 	curH := cur.(*autoscalingv2.HorizontalPodAutoscaler)
+
 	if oldH.ResourceVersion == curH.ResourceVersion {
 		// Periodic resync will send update events for all known HPAs.
 		// Two different versions of the same HPA will always have different ResourceVersions.
@@ -315,6 +334,7 @@ func (ac *AutoscalerController) updateHPA(old, cur interface{}) {
 	klog.V(0).Infof("Updating HPA %s", oldH.Name)
 
 	key, err := controller.KeyFunc(curH)
+
 	if err != nil {
 		return
 	}
@@ -445,6 +465,115 @@ func (ac *AutoscalerController) deleteDeployment(obj interface{}) {
 	}
 }
 
+func (ac *AutoscalerController) addStatefulset(obj interface{}) {
+	s := obj.(*apps.StatefulSet)
+	klog.V(0).Infof("Adding Statefulset %s/%s", s.Namespace, s.Name)
+
+	hpa, err := ac.GetHorizontalPodAutoscalerForStatefulset(s)
+	if err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
+	if hpa != nil {
+		key, err := controller.KeyFunc(hpa)
+		if err != nil {
+			utilruntime.HandleError(err)
+			return
+		}
+		ac.InsertKubezAnnotation(hpa, AddEvent)
+		ac.store.Update(key, hpa)
+
+		ac.enqueueAutoscaler(hpa)
+	}
+}
+
+func (ac *AutoscalerController) updateStatefulset(old, new interface{}) {
+	oldD := old.(*apps.StatefulSet)
+	newD := new.(*apps.StatefulSet)
+	klog.V(0).Infof("Updating Statefulset %s/%s", oldD.Namespace, oldD.Name)
+
+	// No need to handler errors for old HPA, because it always success or nil
+	oldHPA, _ := ac.GetHorizontalPodAutoscalerForStatefulset(oldD)
+	newHPA, err := ac.GetHorizontalPodAutoscalerForStatefulset(newD)
+	if err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
+
+	// Do noting, return directly
+	if oldHPA == nil && newHPA == nil {
+		return
+	}
+
+	// Add
+	if oldHPA == nil && newHPA != nil {
+		key, err := controller.KeyFunc(newHPA)
+		if err != nil {
+			return
+		}
+		ac.InsertKubezAnnotation(newHPA, AddEvent)
+		ac.store.Add(key, newHPA)
+
+		ac.enqueueAutoscaler(newHPA)
+		return
+	}
+
+	// Delete
+	if oldHPA != nil && newHPA == nil {
+		key, err := controller.KeyFunc(oldHPA)
+		if err != nil {
+			return
+		}
+		ac.InsertKubezAnnotation(oldHPA, DeleteEvent)
+		ac.store.Add(key, oldHPA)
+
+		ac.enqueueAutoscaler(oldHPA)
+		return
+	}
+
+	// Update
+	if oldHPA != nil && newHPA != nil {
+		if reflect.DeepEqual(oldHPA.Spec, newHPA.Spec) {
+			// No need to updated
+			return
+		}
+
+		key, err := controller.KeyFunc(newHPA)
+		if err != nil {
+			return
+		}
+		ac.InsertKubezAnnotation(newHPA, UpdateEvent)
+		ac.store.Add(key, newHPA)
+
+		ac.enqueueAutoscaler(newHPA)
+	}
+}
+
+func (ac *AutoscalerController) deleteStatefulset(obj interface{}) {
+	s := obj.(*apps.StatefulSet)
+	klog.V(0).Infof("Deleting Deployment %s/%s", s.Namespace, s.Name)
+
+	hpa, err := ac.GetHorizontalPodAutoscalerForStatefulset(s)
+	if err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
+	if hpa != nil {
+		key, err := controller.KeyFunc(hpa)
+		if err != nil {
+			utilruntime.HandleError(err)
+			return
+		}
+		ac.InsertKubezAnnotation(hpa, DeleteEvent)
+		ac.store.Update(key, hpa)
+
+		ac.enqueueAutoscaler(hpa)
+	}
+}
+
+
+
+
 func (ac *AutoscalerController) GetHorizontalPodAutoscalerForDeployment(d *apps.Deployment) (*autoscalingv2.HorizontalPodAutoscaler, error) {
 	if d == nil || d.Annotations == nil {
 		return nil, nil
@@ -458,6 +587,22 @@ func (ac *AutoscalerController) GetHorizontalPodAutoscalerForDeployment(d *apps.
 	}
 
 	hpa := controller.CreateHorizontalPodAutoscaler(d.Name, d.Namespace, d.UID, appsAPIVersion, Deployment, hpaAnnotations)
+
+	return hpa, nil
+}
+
+func (ac *AutoscalerController) GetHorizontalPodAutoscalerForStatefulset(s *apps.StatefulSet) (*autoscalingv2.HorizontalPodAutoscaler, error) {
+	if s == nil || s.Annotations == nil {
+		return nil, nil
+	}
+	hpaAnnotations, err := controller.PreAndExtractAnnotations(s.Annotations)
+	if err != nil {
+		return nil, err
+	}
+	if len(hpaAnnotations) == 0 {
+		return nil, nil
+	}
+	hpa := controller.CreateHorizontalPodAutoscaler(s.Name, s.Namespace, s.UID, appsAPIVersion, StatefulSet, hpaAnnotations)
 
 	return hpa, nil
 }
@@ -481,6 +626,13 @@ func (ac *AutoscalerController) GetItemsFromHPA(hpa *autoscalingv2.HorizontalPod
 
 		kas.UID = deployment.UID
 		kas.Annotations = deployment.Annotations
+	case StatefulSet:
+		StatefulSet, err := ac.client.AppsV1().StatefulSets(hpa.Namespace).Get(context.TODO(), hpa.Name, metav1.GetOptions{})
+		if err != nil {
+			return nil, err
+		}
+		kas.UID = StatefulSet.UID
+		kas.Annotations = StatefulSet.Annotations
 	}
 	return kas, nil
 }
@@ -508,12 +660,15 @@ func (ac *AutoscalerController) processNextWorkItem() bool {
 	}
 	defer ac.queue.Done(key)
 
+
 	err := ac.syncHandler(key.(string))
 	ac.handleErr(err, key)
 	return true
 }
 
 func (ac *AutoscalerController) handleErr(err error, key interface{}) {
+
+
 	if err == nil {
 		ac.queue.Forget(key)
 		return
