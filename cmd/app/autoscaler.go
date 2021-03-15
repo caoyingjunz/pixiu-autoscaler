@@ -94,9 +94,11 @@ func Run(c *config.KubezConfiguration) error {
 	run := func(ctx context.Context) {
 		ac, err := autoscaler.NewAutoscalerController(
 			InformerFactory.Apps().V1().Deployments(),
+			InformerFactory.Apps().V1().StatefulSets(),
 			InformerFactory.Autoscaling().V1().HorizontalPodAutoscalers(),
 			clientBuilder.ClientOrDie("shared-informers"),
 		)
+
 		if err != nil {
 			klog.Fatalf("error new autoscaler controller: %v", err)
 		}
