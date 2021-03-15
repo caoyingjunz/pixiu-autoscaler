@@ -78,7 +78,7 @@ type AutoscalerController struct {
 
 	// dLister can list/get deployments from the shared informer's store
 	dLister appslisters.DeploymentLister
-
+	// sLister can list/get statefulset from the shared informer's store
 	sLister appslisters.StatefulSetLister
 	// hpaLister is able to list/get HPAs from the shared informer's cache
 	hpaLister autoscalinglisters.HorizontalPodAutoscalerLister
@@ -122,7 +122,7 @@ func NewAutoscalerController(dInformer appsinformers.DeploymentInformer, sInform
 
 	//Statefulset
 	sInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: 	ac.addStatefulset,
+		AddFunc:    ac.addStatefulset,
 		UpdateFunc: ac.updateStatefulset,
 		DeleteFunc: ac.deleteStatefulset,
 	})
@@ -176,7 +176,7 @@ func (ac *AutoscalerController) Run(workers int, stopCh <-chan struct{}) {
 
 	stateInformer := sharedInformers.Apps().V1().StatefulSets().Informer()
 	stateInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:  	ac.addStatefulset,
+		AddFunc:    ac.addStatefulset,
 		UpdateFunc: ac.updateStatefulset,
 		DeleteFunc: ac.deleteStatefulset,
 	})
@@ -325,7 +325,6 @@ func (ac *AutoscalerController) addHPA(obj interface{}) {}
 func (ac *AutoscalerController) updateHPA(old, cur interface{}) {
 	oldH := old.(*autoscalingv2.HorizontalPodAutoscaler)
 	curH := cur.(*autoscalingv2.HorizontalPodAutoscaler)
-
 	if oldH.ResourceVersion == curH.ResourceVersion {
 		// Periodic resync will send update events for all known HPAs.
 		// Two different versions of the same HPA will always have different ResourceVersions.
@@ -334,7 +333,6 @@ func (ac *AutoscalerController) updateHPA(old, cur interface{}) {
 	klog.V(0).Infof("Updating HPA %s", oldH.Name)
 
 	key, err := controller.KeyFunc(curH)
-
 	if err != nil {
 		return
 	}
@@ -487,9 +485,9 @@ func (ac *AutoscalerController) addStatefulset(obj interface{}) {
 	}
 }
 
-func (ac *AutoscalerController) updateStatefulset(old, new interface{}) {
+func (ac *AutoscalerController) updateStatefulset(old, cur interface{}) {
 	oldD := old.(*apps.StatefulSet)
-	newD := new.(*apps.StatefulSet)
+	newD := cur.(*apps.StatefulSet)
 	klog.V(0).Infof("Updating Statefulset %s/%s", oldD.Namespace, oldD.Name)
 
 	// No need to handler errors for old HPA, because it always success or nil
@@ -570,9 +568,6 @@ func (ac *AutoscalerController) deleteStatefulset(obj interface{}) {
 		ac.enqueueAutoscaler(hpa)
 	}
 }
-
-
-
 
 func (ac *AutoscalerController) GetHorizontalPodAutoscalerForDeployment(d *apps.Deployment) (*autoscalingv2.HorizontalPodAutoscaler, error) {
 	if d == nil || d.Annotations == nil {
@@ -660,15 +655,12 @@ func (ac *AutoscalerController) processNextWorkItem() bool {
 	}
 	defer ac.queue.Done(key)
 
-
 	err := ac.syncHandler(key.(string))
 	ac.handleErr(err, key)
 	return true
 }
 
 func (ac *AutoscalerController) handleErr(err error, key interface{}) {
-
-
 	if err == nil {
 		ac.queue.Forget(key)
 		return

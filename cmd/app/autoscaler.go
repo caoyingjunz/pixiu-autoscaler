@@ -98,7 +98,6 @@ func Run(c *config.KubezConfiguration) error {
 			InformerFactory.Autoscaling().V1().HorizontalPodAutoscalers(),
 			clientBuilder.ClientOrDie("shared-informers"),
 		)
-
 		if err != nil {
 			klog.Fatalf("error new autoscaler controller: %v", err)
 		}
