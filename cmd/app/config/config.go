@@ -27,10 +27,11 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
 	componentbaseconfig "k8s.io/component-base/config"
+	"k8s.io/klog"
 )
 
 const (
-	kubezHomeConfig = ".kube/config"
+	defaultConfig = ".kube/config"
 )
 
 // BindFlags binds the LeaderElectionConfiguration struct fields to a flagset
@@ -79,8 +80,7 @@ type KubezConfiguration struct {
 	LeaderElection KubezLeaderElectionConfiguration
 }
 
-// Build the kubeconfig from in-cluster-config at first; if failed,
-// Try to get it from home dir.
+// Build the kubeconfig from inClusterConfig, falling back to default config if failed.
 func BuildKubeConfig() (*rest.Config, error) {
 	var config *rest.Config
 	var err error
@@ -90,5 +90,6 @@ func BuildKubeConfig() (*rest.Config, error) {
 		return config, nil
 	}
 
-	return clientcmd.BuildConfigFromFlags("", filepath.Join(homedir.HomeDir(), kubezHomeConfig))
+	klog.Warning("error creating inClusterConfig, falling back to default config: ", err)
+	return clientcmd.BuildConfigFromFlags("", filepath.Join(homedir.HomeDir(), defaultConfig))
 }
