@@ -29,7 +29,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/informers"
 	appsinformers "k8s.io/client-go/informers/apps/v1"
 	autoscalinginformers "k8s.io/client-go/informers/autoscaling/v1"
 	clientset "k8s.io/client-go/kubernetes"
@@ -85,6 +84,8 @@ type AutoscalerController struct {
 
 	// dListerSynced returns true if the Deployment store has been synced at least once.
 	dListerSynced cache.InformerSynced
+	// sListerSynced returns true if the StatefulSet store has been synced at least once.
+	sListerSynced cache.InformerSynced
 	// hpaListerSynced returns true if the HPA store has been synced at least once.
 	hpaListerSynced cache.InformerSynced
 
@@ -95,7 +96,11 @@ type AutoscalerController struct {
 }
 
 // NewAutoscalerController creates a new AutoscalerController.
-func NewAutoscalerController(dInformer appsinformers.DeploymentInformer, sInformer appsinformers.StatefulSetInformer, hpaInformer autoscalinginformers.HorizontalPodAutoscalerInformer, client clientset.Interface) (*AutoscalerController, error) {
+func NewAutoscalerController(
+	dInformer appsinformers.DeploymentInformer,
+	sInformer appsinformers.StatefulSetInformer,
+	hpaInformer autoscalinginformers.HorizontalPodAutoscalerInformer,
+	client clientset.Interface) (*AutoscalerController, error) {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
 	eventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: client.CoreV1().Events("")})
@@ -143,6 +148,7 @@ func NewAutoscalerController(dInformer appsinformers.DeploymentInformer, sInform
 	ac.enqueueAutoscaler = ac.enqueue
 
 	ac.dListerSynced = dInformer.Informer().HasSynced
+	ac.sListerSynced = sInformer.Informer().HasSynced
 	ac.hpaListerSynced = hpaInformer.Informer().HasSynced
 
 	return ac, nil
@@ -156,31 +162,11 @@ func (ac *AutoscalerController) Run(workers int, stopCh <-chan struct{}) {
 	klog.Infof("Starting Autoscaler Controller")
 	defer klog.Infof("Shutting down Autoscaler Controller")
 
-	// TODO: tmp resolution, and will be removed
-	sharedInformers := informers.NewSharedInformerFactory(ac.client, time.Minute)
-	hpaInformer := sharedInformers.Autoscaling().V2beta2().HorizontalPodAutoscalers().Informer()
-	hpaInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    ac.addHPA,
-		UpdateFunc: ac.updateHPA,
-		DeleteFunc: ac.deleteHPA,
-	})
-	go hpaInformer.Run(stopCh)
-
-	deployInformer := sharedInformers.Apps().V1().Deployments().Informer()
-	deployInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    ac.addDeployment,
-		UpdateFunc: ac.updateDeployment,
-		DeleteFunc: ac.deleteDeployment,
-	})
-	go deployInformer.Run(stopCh)
-
-	stateInformer := sharedInformers.Apps().V1().StatefulSets().Informer()
-	stateInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    ac.addStatefulset,
-		UpdateFunc: ac.updateStatefulset,
-		DeleteFunc: ac.deleteStatefulset,
-	})
-	go stateInformer.Run(stopCh)
+	// Wait for all involved caches to be synced, before processing items from the queue is started
+	if !cache.WaitForCacheSync(stopCh, ac.dListerSynced) {
+		utilruntime.HandleError(fmt.Errorf("Timed out waiting for caches to sync"))
+		return
+	}
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ac.worker, time.Second, stopCh)
