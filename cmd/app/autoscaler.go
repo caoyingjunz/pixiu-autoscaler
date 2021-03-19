@@ -25,12 +25,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/util/uuid"
-	"k8s.io/apimachinery/pkg/util/wait"
-	cacheddiscovery "k8s.io/client-go/discovery/cached"
-	"k8s.io/client-go/informers"
-	"k8s.io/client-go/metadata"
-	"k8s.io/client-go/metadata/metadatainformer"
-	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/klog"
@@ -89,29 +83,20 @@ func Run(c *config.KubezConfiguration) error {
 		return err
 	}
 
-	clientBuilder := controller.SimpleControllerClientBuilder{
-		ClientConfig: kubeConfig,
-	}
-
-	versionedClient := clientBuilder.ClientOrDie("shared-informers")
-	sharedInformers := informers.NewSharedInformerFactory(versionedClient, time.Minute)
-
-	metadataClient := metadata.NewForConfigOrDie(clientBuilder.ConfigOrDie("metadata-informers"))
-	metadataInformers := metadatainformer.NewSharedInformerFactory(metadataClient, time.Minute)
-	ObjectOrMetadataInformerFactory := controller.NewInformerFactory(sharedInformers, metadataInformers)
-
-	discoveryClient := clientBuilder.ClientOrDie("controller-discovery")
-	cachedClient := cacheddiscovery.NewMemCacheClient(discoveryClient.Discovery())
-	restMapper := restmapper.NewDeferredDiscoveryRESTMapper(cachedClient)
-	go wait.Until(func() {
-		restMapper.Reset()
-	}, 30*time.Second, stopCh)
-
 	run := func(ctx context.Context) {
+		clientBuilder := controller.SimpleControllerClientBuilder{
+			ClientConfig: kubeConfig,
+		}
+
+		kubezCtx, err := CreateControllerContext(clientBuilder, clientBuilder, ctx.Done())
+		if err != nil {
+			klog.Fatal("create kubez context failed: %v", err)
+		}
+
 		ac, err := autoscaler.NewAutoscalerController(
-			sharedInformers.Apps().V1().Deployments(),
-			sharedInformers.Apps().V1().StatefulSets(),
-			sharedInformers.Autoscaling().V1().HorizontalPodAutoscalers(),
+			kubezCtx.InformerFactory.Apps().V1().Deployments(),
+			kubezCtx.InformerFactory.Apps().V1().StatefulSets(),
+			kubezCtx.InformerFactory.Autoscaling().V1().HorizontalPodAutoscalers(),
 			clientBuilder.ClientOrDie("shared-informers"),
 		)
 		if err != nil {
@@ -119,8 +104,8 @@ func Run(c *config.KubezConfiguration) error {
 		}
 		go ac.Run(workers, stopCh)
 
-		sharedInformers.Start(stopCh)
-		ObjectOrMetadataInformerFactory.Start(stopCh)
+		kubezCtx.InformerFactory.Start(stopCh)
+		kubezCtx.ObjectOrMetadataInformerFactory.Start(stopCh)
 		select {}
 	}
 
@@ -135,14 +120,19 @@ func Run(c *config.KubezConfiguration) error {
 	if err != nil {
 		return err
 	}
+
 	// add a uniquifier so that two processes on the same host don't accidentally both become active
 	id = id + "_" + string(uuid.NewUUID())
 
+	leaderClientBuilder := controller.SimpleControllerClientBuilder{
+		ClientConfig: kubeConfig,
+	}
+	leaderClient := leaderClientBuilder.ClientOrDie("shared-informers")
 	rl, err := resourcelock.New("endpointsleases",
 		"kube-system",
 		"kubez-autoscaler-manager",
-		versionedClient.CoreV1(),
-		versionedClient.CoordinationV1(),
+		leaderClient.CoreV1(),
+		leaderClient.CoordinationV1(),
 		resourcelock.ResourceLockConfig{
 			Identity: id,
 			//EventRecorder: c.EventRecorder,
