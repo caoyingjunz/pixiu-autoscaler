@@ -37,6 +37,13 @@ var (
 	KeyFunc = cache.DeletionHandlingMetaNamespaceKeyFunc
 )
 
+type ControllerClientBuilder interface {
+	Config(name string) (*restclient.Config, error)
+	ConfigOrDie(name string) *restclient.Config
+	Client(name string) (clientset.Interface, error)
+	ClientOrDie(name string) clientset.Interface
+}
+
 // SimpleControllerClientBuilder returns a fixed client with different user agents
 type SimpleControllerClientBuilder struct {
 	// ClientConfig is a skeleton config to clone and use as the basis for each controller client
