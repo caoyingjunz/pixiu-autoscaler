@@ -277,6 +277,8 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 				return nil
 			}
 		}
+	default:
+		return fmt.Errorf("unsupported handlers event %s", event)
 	}
 
 	return err
