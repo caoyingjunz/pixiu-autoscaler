@@ -96,7 +96,7 @@ func Run(c *config.KubezConfiguration) error {
 		ac, err := autoscaler.NewAutoscalerController(
 			kubezCtx.InformerFactory.Apps().V1().Deployments(),
 			kubezCtx.InformerFactory.Apps().V1().StatefulSets(),
-			kubezCtx.InformerFactory.Autoscaling().V1().HorizontalPodAutoscalers(),
+			kubezCtx.InformerFactory.Autoscaling().V2beta2().HorizontalPodAutoscalers(),
 			clientBuilder.ClientOrDie("shared-informers"),
 		)
 		if err != nil {
@@ -106,6 +106,8 @@ func Run(c *config.KubezConfiguration) error {
 
 		kubezCtx.InformerFactory.Start(stopCh)
 		kubezCtx.ObjectOrMetadataInformerFactory.Start(stopCh)
+
+		// always wait
 		select {}
 	}
 
