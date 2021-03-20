@@ -70,7 +70,7 @@ func PreAndExtractAnnotations(annotations map[string]string) (map[string]int32, 
 			return nil, err
 		}
 		if averageUtilizationInt64 <= 0 || averageUtilizationInt64 > 100 {
-			return nil, fmt.Errorf("averageUtilization should be range 1, 100")
+			return nil, fmt.Errorf("averageUtilization should be range 1 between 100")
 		}
 		hpaAnnotations[AverageUtilization] = int32(averageUtilizationInt64)
 	}

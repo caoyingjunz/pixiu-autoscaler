@@ -214,22 +214,15 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 			return nil
 		}
 	case RecoverUpdateEvent:
-		// TODO: 后续有空抽象
-		deploy, err := ac.client.AppsV1().Deployments(hpa.Namespace).Get(context.TODO(), hpa.Name, metav1.GetOptions{})
+		// Since the HPA has been updated, we need to get origin spec to check whether it shouled be recover
+		deploy, err := ac.dLister.Deployments(hpa.Namespace).Get(hpa.Name)
 		if err != nil {
 			return err
 		}
-
-		isOwner := false
-		for _, ownerReference := range hpa.OwnerReferences {
-			if deploy.UID == ownerReference.UID {
-				isOwner = true
-				break
-			}
-		}
-		if !isOwner {
+		if !controller.IsOwnerReference(deploy.UID, hpa.OwnerReferences) {
 			return nil
 		}
+
 		newHPA, err := ac.GetHorizontalPodAutoscalerForDeployment(deploy)
 		if err != nil {
 			return err
@@ -246,31 +239,18 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 			}
 		}
 	case RecoverDeleteEvent:
-		deploy, err := ac.client.AppsV1().Deployments(hpa.Namespace).Get(context.TODO(), hpa.Name, metav1.GetOptions{})
+		newHPA, err := ac.GetNewestHPAFromResource(hpa)
 		if err != nil {
 			return err
 		}
 
-		isOwner := false
-		for _, ownerReference := range hpa.OwnerReferences {
-			if deploy.UID == ownerReference.UID {
-				isOwner = true
-				break
-			}
-		}
-		if !isOwner {
-			return nil
-		}
-
-		hpa, err = ac.GetHorizontalPodAutoscalerForDeployment(deploy)
-		if err != nil {
-			return err
-		}
-
-		if hpa != nil {
-			_, err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(hpa.Namespace).Create(context.TODO(), hpa, metav1.CreateOptions{})
-			if errors.IsAlreadyExists(err) {
-				return nil
+		if newHPA != nil {
+			_, err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(newHPA.Namespace).Create(context.TODO(), newHPA, metav1.CreateOptions{})
+			if err != nil {
+				if errors.IsAlreadyExists(err) {
+					return nil
+				}
+				return err
 			}
 		}
 	default:
@@ -278,6 +258,32 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 	}
 
 	return err
+}
+
+// GetNewestHPA will get newest HPA from kubernetes resources
+func (ac *AutoscalerController) GetNewestHPAFromResource(hpa *autoscalingv2.HorizontalPodAutoscaler) (*autoscalingv2.HorizontalPodAutoscaler, error) {
+	kind := hpa.Spec.ScaleTargetRef.Kind
+	switch kind {
+	case Deployment:
+		d, err := ac.dLister.Deployments(hpa.Namespace).Get(hpa.Name)
+		if err != nil {
+			return nil, err
+		}
+		if !controller.IsOwnerReference(d.UID, hpa.OwnerReferences) {
+			return nil, nil
+		}
+		return ac.GetHorizontalPodAutoscalerForDeployment(d)
+	case StatefulSet:
+		s, err := ac.sLister.StatefulSets(hpa.Namespace).Get(hpa.Name)
+		if err != nil {
+			return nil, err
+		}
+		if !controller.IsOwnerReference(s.UID, hpa.OwnerReferences) {
+			return nil, nil
+		}
+		return ac.GetHorizontalPodAutoscalerForStatefulset(s)
+	}
+	return nil, nil
 }
 
 // To insert annotation to distinguish the event type
@@ -506,36 +512,6 @@ func (ac *AutoscalerController) GetHorizontalPodAutoscalerForStatefulset(s *apps
 	hpa := controller.CreateHorizontalPodAutoscaler(s.Name, s.Namespace, s.UID, appsAPIVersion, StatefulSet, hpaAnnotations)
 
 	return hpa, nil
-}
-
-// Get KubeAutoscaler from the given kubernetes resources, the resources could be
-// Deployment, ReplicaSet, StatefulSet, or ReplicationController.
-func (ac *AutoscalerController) GetItemsFromHPA(hpa *autoscalingv2.HorizontalPodAutoscaler) (*controller.KubeAutoscaler, error) {
-	targetKind := hpa.Spec.ScaleTargetRef.Kind
-
-	kas := &controller.KubeAutoscaler{
-		APIVersion: appsAPIVersion,
-		Kind:       targetKind,
-	}
-
-	switch targetKind {
-	case Deployment:
-		deployment, err := ac.client.AppsV1().Deployments(hpa.Namespace).Get(context.TODO(), hpa.Name, metav1.GetOptions{})
-		if err != nil {
-			return nil, err
-		}
-
-		kas.UID = deployment.UID
-		kas.Annotations = deployment.Annotations
-	case StatefulSet:
-		statefulSet, err := ac.client.AppsV1().StatefulSets(hpa.Namespace).Get(context.TODO(), hpa.Name, metav1.GetOptions{})
-		if err != nil {
-			return nil, err
-		}
-		kas.UID = statefulSet.UID
-		kas.Annotations = statefulSet.Annotations
-	}
-	return kas, nil
 }
 
 func (ac *AutoscalerController) enqueue(hpa *autoscalingv2.HorizontalPodAutoscaler) {

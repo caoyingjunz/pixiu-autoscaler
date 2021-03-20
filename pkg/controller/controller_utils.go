@@ -80,14 +80,6 @@ func (b SimpleControllerClientBuilder) ClientOrDie(name string) clientset.Interf
 	return client
 }
 
-// KubeAutoscaler is responsible for HPA objects stored.
-type KubeAutoscaler struct {
-	APIVersion  string
-	Kind        string
-	UID         types.UID
-	Annotations map[string]string
-}
-
 // AutoscalerContext is responsible for kubernetes resources stored.
 type AutoscalerContext struct {
 	Name        string            `json:"name"`
@@ -197,4 +189,15 @@ func parseMetrics(annotations map[string]int32) []autoscalingv2.MetricSpec {
 	}
 
 	return metrics
+}
+
+func IsOwnerReference(uid types.UID, ownerReferences []metav1.OwnerReference) bool {
+	var isOwnerRef bool
+	for _, ownerReferences := range ownerReferences {
+		if uid == ownerReferences.UID {
+			isOwnerRef = true
+			break
+		}
+	}
+	return isOwnerRef
 }
