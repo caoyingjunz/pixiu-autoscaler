@@ -303,6 +303,117 @@ func (ac *AutoscalerController) PopKubezAnnotation(hpa *autoscalingv2.Horizontal
 	return event
 }
 
+func (ac *AutoscalerController) HandlerAddEvents(obj interface{}) {
+	ascCtx := controller.NewAutoscalerContext(obj)
+	klog.V(2).Infof("Adding %s %s/%s", ascCtx.Kind, ascCtx.Namespace, ascCtx.Name)
+	if len(ascCtx.Annotations) == 0 {
+		return
+	}
+
+	hpaAnnotations, err := controller.PreAndExtractAnnotations(ascCtx.Annotations)
+	if err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
+	if len(hpaAnnotations) == 0 {
+		return
+	}
+
+	if hpa := controller.CreateHorizontalPodAutoscaler(ascCtx.Name, ascCtx.Namespace, ascCtx.UID, appsAPIVersion, ascCtx.Kind, hpaAnnotations); hpa != nil {
+		key, err := controller.KeyFunc(hpa)
+		if err != nil {
+			utilruntime.HandleError(err)
+			return
+		}
+		ac.InsertKubezAnnotation(hpa, AddEvent)
+		ac.store.Update(key, hpa)
+
+		ac.enqueueAutoscaler(hpa)
+	}
+}
+
+func (ac *AutoscalerController) HandlerUpdateEvents(old, cur interface{}) {
+	oldCtx := controller.NewAutoscalerContext(old)
+	curCtx := controller.NewAutoscalerContext(cur)
+	klog.V(2).Infof("Updating %s %s/%s", oldCtx.Kind, oldCtx.Namespace, oldCtx.Name)
+
+	if reflect.DeepEqual(oldCtx.Annotations, curCtx.Annotations) {
+		return
+	}
+
+	// No need to handler error for old, it always success or nil
+	oldAnnotations, _ := controller.PreAndExtractAnnotations(oldCtx.Annotations)
+	curAnnotations, err := controller.PreAndExtractAnnotations(curCtx.Annotations)
+	if err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
+
+	// Do noting, return directly if HPA Annotations stuff not changed
+	if reflect.DeepEqual(oldAnnotations, curAnnotations) {
+		return
+	}
+
+	oldExists := len(oldAnnotations) == 0
+	curExists := len(curAnnotations) == 0
+
+	// Delete HPAs
+	if oldExists && !curExists {
+		hpa := controller.CreateHorizontalPodAutoscaler(oldCtx.Name, oldCtx.Namespace, oldCtx.UID, appsAPIVersion, oldCtx.Kind, oldAnnotations)
+		key, err := controller.KeyFunc(hpa)
+		if err != nil {
+			return
+		}
+		ac.InsertKubezAnnotation(hpa, DeleteEvent)
+		ac.store.Add(key, hpa)
+
+		ac.enqueueAutoscaler(hpa)
+		return
+	}
+
+	// Add or Update HPAs
+	hpa := controller.CreateHorizontalPodAutoscaler(curCtx.Name, curCtx.Namespace, curCtx.UID, appsAPIVersion, curCtx.Kind, curAnnotations)
+	key, err := controller.KeyFunc(hpa)
+	if err != nil {
+		return
+	}
+	if !oldExists && curExists {
+		ac.InsertKubezAnnotation(hpa, AddEvent)
+	} else if oldExists && curExists {
+		ac.InsertKubezAnnotation(hpa, UpdateEvent)
+	}
+	ac.store.Add(key, hpa)
+
+	ac.enqueueAutoscaler(hpa)
+}
+
+func (ac *AutoscalerController) HandlerDeleteEvents(obj interface{}) {
+	ascCtx := controller.NewAutoscalerContext(obj)
+	klog.V(2).Infof("Deleting %s %s/%s", ascCtx.Kind, ascCtx.Namespace, ascCtx.Name)
+
+	// TODO: will move PreAndExtractAnnotations into CreateHorizontalPodAutoscaler
+	hpaAnnotations, err := controller.PreAndExtractAnnotations(ascCtx.Annotations)
+	if err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
+	if len(hpaAnnotations) == 0 {
+		return
+	}
+
+	if hpa := controller.CreateHorizontalPodAutoscaler(ascCtx.Name, ascCtx.Namespace, ascCtx.UID, appsAPIVersion, ascCtx.Kind, hpaAnnotations); hpa != nil {
+		key, err := controller.KeyFunc(hpa)
+		if err != nil {
+			utilruntime.HandleError(err)
+			return
+		}
+		ac.InsertKubezAnnotation(hpa, DeleteEvent)
+		ac.store.Update(key, hpa)
+
+		ac.enqueueAutoscaler(hpa)
+	}
+}
+
 func (ac *AutoscalerController) addHPA(obj interface{}) {}
 
 // updateHPA figures out what HPA(s) is updated and wake them up.
@@ -343,215 +454,27 @@ func (ac *AutoscalerController) deleteHPA(obj interface{}) {
 }
 
 func (ac *AutoscalerController) addDeployment(obj interface{}) {
-	d := obj.(*apps.Deployment)
-	klog.V(0).Infof("Adding Deployment %s/%s", d.Namespace, d.Name)
-
-	hpa, err := ac.GetHorizontalPodAutoscalerForDeployment(d)
-	if err != nil {
-		utilruntime.HandleError(err)
-		return
-	}
-	if hpa != nil {
-		key, err := controller.KeyFunc(hpa)
-		if err != nil {
-			utilruntime.HandleError(err)
-			return
-		}
-		ac.InsertKubezAnnotation(hpa, AddEvent)
-		ac.store.Update(key, hpa)
-
-		ac.enqueueAutoscaler(hpa)
-	}
+	ac.HandlerAddEvents(obj)
 }
 
-func (ac *AutoscalerController) updateDeployment(old, new interface{}) {
-	oldD := old.(*apps.Deployment)
-	newD := new.(*apps.Deployment)
-	klog.V(0).Infof("Updating Deployment %s/%s", oldD.Namespace, oldD.Name)
-
-	// No need to handler errors for old HPA, because it always success or nil
-	oldHPA, _ := ac.GetHorizontalPodAutoscalerForDeployment(oldD)
-	newHPA, err := ac.GetHorizontalPodAutoscalerForDeployment(newD)
-	if err != nil {
-		utilruntime.HandleError(err)
-		return
-	}
-
-	// Do noting, return directly
-	if oldHPA == nil && newHPA == nil {
-		return
-	}
-
-	// Add
-	if oldHPA == nil && newHPA != nil {
-		key, err := controller.KeyFunc(newHPA)
-		if err != nil {
-			return
-		}
-		ac.InsertKubezAnnotation(newHPA, AddEvent)
-		ac.store.Add(key, newHPA)
-
-		ac.enqueueAutoscaler(newHPA)
-		return
-	}
-
-	// Delete
-	if oldHPA != nil && newHPA == nil {
-		key, err := controller.KeyFunc(oldHPA)
-		if err != nil {
-			return
-		}
-		ac.InsertKubezAnnotation(oldHPA, DeleteEvent)
-		ac.store.Add(key, oldHPA)
-
-		ac.enqueueAutoscaler(oldHPA)
-		return
-	}
-
-	// Update
-	if oldHPA != nil && newHPA != nil {
-		if reflect.DeepEqual(oldHPA.Spec, newHPA.Spec) {
-			// No need to updated
-			return
-		}
-
-		key, err := controller.KeyFunc(newHPA)
-		if err != nil {
-			return
-		}
-		ac.InsertKubezAnnotation(newHPA, UpdateEvent)
-		ac.store.Add(key, newHPA)
-
-		ac.enqueueAutoscaler(newHPA)
-	}
+func (ac *AutoscalerController) updateDeployment(old, cur interface{}) {
+	ac.HandlerUpdateEvents(old, cur)
 }
 
 func (ac *AutoscalerController) deleteDeployment(obj interface{}) {
-	d := obj.(*apps.Deployment)
-	klog.V(0).Infof("Deleting Deployment %s/%s", d.Namespace, d.Name)
-
-	hpa, err := ac.GetHorizontalPodAutoscalerForDeployment(d)
-	if err != nil {
-		utilruntime.HandleError(err)
-		return
-	}
-	if hpa != nil {
-		key, err := controller.KeyFunc(hpa)
-		if err != nil {
-			utilruntime.HandleError(err)
-			return
-		}
-		ac.InsertKubezAnnotation(hpa, DeleteEvent)
-		ac.store.Update(key, hpa)
-
-		ac.enqueueAutoscaler(hpa)
-	}
+	ac.HandlerDeleteEvents(obj)
 }
 
 func (ac *AutoscalerController) addStatefulset(obj interface{}) {
-	s := obj.(*apps.StatefulSet)
-	klog.V(0).Infof("Adding Statefulset %s/%s", s.Namespace, s.Name)
-
-	hpa, err := ac.GetHorizontalPodAutoscalerForStatefulset(s)
-	if err != nil {
-		utilruntime.HandleError(err)
-		return
-	}
-	if hpa != nil {
-		key, err := controller.KeyFunc(hpa)
-		if err != nil {
-			utilruntime.HandleError(err)
-			return
-		}
-		ac.InsertKubezAnnotation(hpa, AddEvent)
-		ac.store.Update(key, hpa)
-
-		ac.enqueueAutoscaler(hpa)
-	}
+	ac.HandlerAddEvents(obj)
 }
 
 func (ac *AutoscalerController) updateStatefulset(old, cur interface{}) {
-	oldD := old.(*apps.StatefulSet)
-	newD := cur.(*apps.StatefulSet)
-	klog.V(0).Infof("Updating Statefulset %s/%s", oldD.Namespace, oldD.Name)
-
-	// No need to handler errors for old HPA, because it always success or nil
-	oldHPA, _ := ac.GetHorizontalPodAutoscalerForStatefulset(oldD)
-	newHPA, err := ac.GetHorizontalPodAutoscalerForStatefulset(newD)
-	if err != nil {
-		utilruntime.HandleError(err)
-		return
-	}
-
-	// Do noting, return directly
-	if oldHPA == nil && newHPA == nil {
-		return
-	}
-
-	// Add
-	if oldHPA == nil && newHPA != nil {
-		key, err := controller.KeyFunc(newHPA)
-		if err != nil {
-			return
-		}
-		ac.InsertKubezAnnotation(newHPA, AddEvent)
-		ac.store.Add(key, newHPA)
-
-		ac.enqueueAutoscaler(newHPA)
-		return
-	}
-
-	// Delete
-	if oldHPA != nil && newHPA == nil {
-		key, err := controller.KeyFunc(oldHPA)
-		if err != nil {
-			return
-		}
-		ac.InsertKubezAnnotation(oldHPA, DeleteEvent)
-		ac.store.Add(key, oldHPA)
-
-		ac.enqueueAutoscaler(oldHPA)
-		return
-	}
-
-	// Update
-	if oldHPA != nil && newHPA != nil {
-		if reflect.DeepEqual(oldHPA.Spec, newHPA.Spec) {
-			// No need to updated
-			return
-		}
-
-		key, err := controller.KeyFunc(newHPA)
-		if err != nil {
-			return
-		}
-		ac.InsertKubezAnnotation(newHPA, UpdateEvent)
-		ac.store.Add(key, newHPA)
-
-		ac.enqueueAutoscaler(newHPA)
-	}
+	ac.HandlerUpdateEvents(old, cur)
 }
 
 func (ac *AutoscalerController) deleteStatefulset(obj interface{}) {
-	s := obj.(*apps.StatefulSet)
-	klog.V(0).Infof("Deleting Deployment %s/%s", s.Namespace, s.Name)
-
-	hpa, err := ac.GetHorizontalPodAutoscalerForStatefulset(s)
-	if err != nil {
-		utilruntime.HandleError(err)
-		return
-	}
-	if hpa != nil {
-		key, err := controller.KeyFunc(hpa)
-		if err != nil {
-			utilruntime.HandleError(err)
-			return
-		}
-		ac.InsertKubezAnnotation(hpa, DeleteEvent)
-		ac.store.Update(key, hpa)
-
-		ac.enqueueAutoscaler(hpa)
-	}
+	ac.HandlerDeleteEvents(obj)
 }
 
 func (ac *AutoscalerController) GetHorizontalPodAutoscalerForDeployment(d *apps.Deployment) (*autoscalingv2.HorizontalPodAutoscaler, error) {

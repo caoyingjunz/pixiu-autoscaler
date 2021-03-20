@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	apps "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2beta2"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -85,6 +86,45 @@ type KubeAutoscaler struct {
 	Kind        string
 	UID         types.UID
 	Annotations map[string]string
+}
+
+// AutoscalerContext is responsible for kubernetes resources stored.
+type AutoscalerContext struct {
+	Name        string            `json:"name"`
+	Namespace   string            `json:"namespace"`
+	APIVersion  string            `json:"api_version"`
+	Kind        string            `json:"kind"`
+	UID         types.UID         `json:"uid"`
+	Annotations map[string]string `json:"annotations"`
+}
+
+// NewAutoscalerContext extracts contexts which we needed from kubernetes resouces.
+// The resouces could be Deployment, StatefulSet for now
+func NewAutoscalerContext(obj interface{}) *AutoscalerContext {
+	// TODO: 后续优化，直接获取 hpa 的 Annotations
+	switch o := obj.(type) {
+	case *apps.Deployment:
+		return &AutoscalerContext{
+			Name:        o.Name,
+			Namespace:   o.Namespace,
+			APIVersion:  o.APIVersion,
+			Kind:        "Deployment",
+			UID:         o.UID,
+			Annotations: o.Annotations,
+		}
+	case *apps.StatefulSet:
+		return &AutoscalerContext{
+			Name:        o.Name,
+			Namespace:   o.Namespace,
+			APIVersion:  o.APIVersion,
+			Kind:        "StatefulSet",
+			UID:         o.UID,
+			Annotations: o.Annotations,
+		}
+	default:
+		// never happens
+		return nil
+	}
 }
 
 func CreateHorizontalPodAutoscaler(
