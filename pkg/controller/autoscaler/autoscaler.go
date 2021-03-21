@@ -27,6 +27,7 @@ import (
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	appsinformers "k8s.io/client-go/informers/apps/v1"
@@ -262,6 +263,8 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 
 // GetNewestHPA will get newest HPA from kubernetes resources
 func (ac *AutoscalerController) GetNewestHPAFromResource(hpa *autoscalingv2.HorizontalPodAutoscaler) (*autoscalingv2.HorizontalPodAutoscaler, error) {
+	var annotations map[string]string
+	var uid types.UID
 	kind := hpa.Spec.ScaleTargetRef.Kind
 	switch kind {
 	case Deployment:
@@ -269,21 +272,34 @@ func (ac *AutoscalerController) GetNewestHPAFromResource(hpa *autoscalingv2.Hori
 		if err != nil {
 			return nil, err
 		}
-		if !controller.IsOwnerReference(d.UID, hpa.OwnerReferences) {
+
+		// check
+		if !controller.IsOwnerReference(d.UID, hpa.OwnerReferences) || d.Annotations == nil || len(d.Annotations) == 0 {
 			return nil, nil
 		}
-		return ac.GetHorizontalPodAutoscalerForDeployment(d)
+		uid = d.UID
+		annotations = d.Annotations
 	case StatefulSet:
 		s, err := ac.sLister.StatefulSets(hpa.Namespace).Get(hpa.Name)
 		if err != nil {
 			return nil, err
 		}
-		if !controller.IsOwnerReference(s.UID, hpa.OwnerReferences) {
+		if !controller.IsOwnerReference(s.UID, hpa.OwnerReferences) || s.Annotations == nil || len(s.Annotations) == 0 {
 			return nil, nil
 		}
-		return ac.GetHorizontalPodAutoscalerForStatefulset(s)
+		uid = s.UID
+		annotations = s.Annotations
 	}
-	return nil, nil
+
+	hpaAnnotations, err := controller.PreAndExtractAnnotations(annotations)
+	if err != nil {
+		return nil, err
+	}
+	if len(hpaAnnotations) == 0 {
+		return nil, nil
+	}
+
+	return controller.CreateHorizontalPodAutoscaler(hpa.Name, hpa.Namespace, uid, appsAPIVersion, kind, hpaAnnotations), nil
 }
 
 // To insert annotation to distinguish the event type
@@ -494,23 +510,6 @@ func (ac *AutoscalerController) GetHorizontalPodAutoscalerForDeployment(d *apps.
 	}
 
 	hpa := controller.CreateHorizontalPodAutoscaler(d.Name, d.Namespace, d.UID, appsAPIVersion, Deployment, hpaAnnotations)
-
-	return hpa, nil
-}
-
-func (ac *AutoscalerController) GetHorizontalPodAutoscalerForStatefulset(s *apps.StatefulSet) (*autoscalingv2.HorizontalPodAutoscaler, error) {
-	if s == nil || s.Annotations == nil {
-		return nil, nil
-	}
-	hpaAnnotations, err := controller.PreAndExtractAnnotations(s.Annotations)
-	if err != nil {
-		return nil, err
-	}
-	if len(hpaAnnotations) == 0 {
-		return nil, nil
-	}
-	hpa := controller.CreateHorizontalPodAutoscaler(s.Name, s.Namespace, s.UID, appsAPIVersion, StatefulSet, hpaAnnotations)
-
 	return hpa, nil
 }
 
