@@ -370,8 +370,8 @@ func (ac *AutoscalerController) HandlerUpdateEvents(old, cur interface{}) {
 		return
 	}
 
-	oldExists := len(oldAnnotations) == 0
-	curExists := len(curAnnotations) == 0
+	oldExists := len(oldAnnotations) != 0
+	curExists := len(curAnnotations) != 0
 
 	// Delete HPAs
 	if oldExists && !curExists {
@@ -393,6 +393,7 @@ func (ac *AutoscalerController) HandlerUpdateEvents(old, cur interface{}) {
 	if err != nil {
 		return
 	}
+
 	if !oldExists && curExists {
 		ac.InsertKubezAnnotation(hpa, AddEvent)
 	} else if oldExists && curExists {
