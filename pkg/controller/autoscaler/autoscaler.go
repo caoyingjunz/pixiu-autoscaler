@@ -470,30 +470,6 @@ func (ac *AutoscalerController) deleteHPA(obj interface{}) {
 	ac.enqueueAutoscaler(h)
 }
 
-func (ac *AutoscalerController) addDeployment(obj interface{}) {
-	ac.HandlerAddEvents(obj)
-}
-
-func (ac *AutoscalerController) updateDeployment(old, cur interface{}) {
-	ac.HandlerUpdateEvents(old, cur)
-}
-
-func (ac *AutoscalerController) deleteDeployment(obj interface{}) {
-	ac.HandlerDeleteEvents(obj)
-}
-
-func (ac *AutoscalerController) addStatefulset(obj interface{}) {
-	ac.HandlerAddEvents(obj)
-}
-
-func (ac *AutoscalerController) updateStatefulset(old, cur interface{}) {
-	ac.HandlerUpdateEvents(old, cur)
-}
-
-func (ac *AutoscalerController) deleteStatefulset(obj interface{}) {
-	ac.HandlerDeleteEvents(obj)
-}
-
 func (ac *AutoscalerController) enqueue(hpa *autoscalingv2.HorizontalPodAutoscaler) {
 	key, err := controller.KeyFunc(hpa)
 	if err != nil {
@@ -537,4 +513,28 @@ func (ac *AutoscalerController) handleErr(err error, key interface{}) {
 	utilruntime.HandleError(err)
 	klog.V(0).Infof("Dropping HPA %q out of the queue: %v", key, err)
 	ac.queue.Forget(key)
+}
+
+func (ac *AutoscalerController) addDeployment(obj interface{}) {
+	ac.HandlerAddEvents(obj)
+}
+
+func (ac *AutoscalerController) updateDeployment(old, cur interface{}) {
+	ac.HandlerUpdateEvents(old, cur)
+}
+
+func (ac *AutoscalerController) deleteDeployment(obj interface{}) {
+	ac.HandlerDeleteEvents(obj)
+}
+
+func (ac *AutoscalerController) addStatefulset(obj interface{}) {
+	ac.HandlerAddEvents(obj)
+}
+
+func (ac *AutoscalerController) updateStatefulset(old, cur interface{}) {
+	ac.HandlerUpdateEvents(old, cur)
+}
+
+func (ac *AutoscalerController) deleteStatefulset(obj interface{}) {
+	ac.HandlerDeleteEvents(obj)
 }
