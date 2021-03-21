@@ -22,7 +22,6 @@ import (
 	"reflect"
 	"time"
 
-	apps "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2beta2"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -204,9 +203,12 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 		}
 	case UpdateEvent:
 		_, err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(hpa.Namespace).Update(context.TODO(), hpa, metav1.UpdateOptions{})
-		if errors.IsNotFound(err) {
-			// The HPA has deleted
-			return nil
+		if err != nil {
+			if errors.IsNotFound(err) {
+				// The HPA has deleted
+				return nil
+			}
+			return err
 		}
 	case DeleteEvent:
 		err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(hpa.Namespace).Delete(context.TODO(), hpa.Name, metav1.DeleteOptions{})
@@ -216,43 +218,40 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 		}
 	case RecoverUpdateEvent:
 		// Since the HPA has been updated, we need to get origin spec to check whether it shouled be recover
-		deploy, err := ac.dLister.Deployments(hpa.Namespace).Get(hpa.Name)
+		newHPA, err := ac.GetNewestHPAFromResource(hpa)
 		if err != nil {
 			return err
 		}
-		if !controller.IsOwnerReference(deploy.UID, hpa.OwnerReferences) {
+		if newHPA == nil {
 			return nil
-		}
-
-		newHPA, err := ac.GetHorizontalPodAutoscalerForDeployment(deploy)
-		if err != nil {
-			return err
 		}
 		if reflect.DeepEqual(hpa.Spec, newHPA.Spec) {
 			klog.V(2).Infof("HPA: %s/%s spec is not changed, no need to updated", hpa.Namespace, hpa.Name)
 			return nil
 		}
 
-		if newHPA != nil {
-			_, err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(newHPA.Namespace).Update(context.TODO(), newHPA, metav1.UpdateOptions{})
+		_, err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(newHPA.Namespace).Update(context.TODO(), newHPA, metav1.UpdateOptions{})
+		if err != nil {
 			if errors.IsNotFound(err) {
 				return nil
 			}
+			return err
 		}
 	case RecoverDeleteEvent:
 		newHPA, err := ac.GetNewestHPAFromResource(hpa)
 		if err != nil {
 			return err
 		}
+		if newHPA == nil {
+			return nil
+		}
 
-		if newHPA != nil {
-			_, err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(newHPA.Namespace).Create(context.TODO(), newHPA, metav1.CreateOptions{})
-			if err != nil {
-				if errors.IsAlreadyExists(err) {
-					return nil
-				}
-				return err
+		_, err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(newHPA.Namespace).Create(context.TODO(), newHPA, metav1.CreateOptions{})
+		if err != nil {
+			if errors.IsAlreadyExists(err) {
+				return nil
 			}
+			return err
 		}
 	default:
 		return fmt.Errorf("unsupported handlers event %s", event)
@@ -495,22 +494,6 @@ func (ac *AutoscalerController) updateStatefulset(old, cur interface{}) {
 
 func (ac *AutoscalerController) deleteStatefulset(obj interface{}) {
 	ac.HandlerDeleteEvents(obj)
-}
-
-func (ac *AutoscalerController) GetHorizontalPodAutoscalerForDeployment(d *apps.Deployment) (*autoscalingv2.HorizontalPodAutoscaler, error) {
-	if d == nil || d.Annotations == nil {
-		return nil, nil
-	}
-	hpaAnnotations, err := controller.PreAndExtractAnnotations(d.Annotations)
-	if err != nil {
-		return nil, err
-	}
-	if len(hpaAnnotations) == 0 {
-		return nil, nil
-	}
-
-	hpa := controller.CreateHorizontalPodAutoscaler(d.Name, d.Namespace, d.UID, appsAPIVersion, Deployment, hpaAnnotations)
-	return hpa, nil
 }
 
 func (ac *AutoscalerController) enqueue(hpa *autoscalingv2.HorizontalPodAutoscaler) {
