@@ -192,24 +192,22 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 
 	var err error
 	event := ac.PopKubezAnnotation(hpa)
+	klog.V(0).Infof("Handlering HPA: %s/%s, event: %s", hpa.Namespace, hpa.Name, event)
 
 	switch event {
 	case AddEvent:
-		klog.V(2).Infof("Adding HPA: %s/%s", hpa.Namespace, hpa.Name)
 		_, err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(hpa.Namespace).Create(context.TODO(), hpa, metav1.CreateOptions{})
 		if errors.IsAlreadyExists(err) {
 			// The HPA has added
 			return nil
 		}
 	case UpdateEvent:
-		klog.V(2).Infof("Updating HPA: %s/%s", hpa.Namespace, hpa.Name)
 		_, err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(hpa.Namespace).Update(context.TODO(), hpa, metav1.UpdateOptions{})
 		if errors.IsNotFound(err) {
 			// The HPA has deleted
 			return nil
 		}
 	case DeleteEvent:
-		klog.V(2).Infof("Deleting HPA: %s/%s", hpa.Namespace, hpa.Name)
 		err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(hpa.Namespace).Delete(context.TODO(), hpa.Name, metav1.DeleteOptions{})
 		if errors.IsNotFound(err) {
 			// The HPA has deleted
@@ -217,7 +215,6 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 		}
 	case RecoverUpdateEvent:
 		// TODO: 后续有空抽象
-		klog.V(2).Infof("Recovering HPA: %s/%s from updated", hpa.Namespace, hpa.Name)
 		deploy, err := ac.client.AppsV1().Deployments(hpa.Namespace).Get(context.TODO(), hpa.Name, metav1.GetOptions{})
 		if err != nil {
 			return err
@@ -249,7 +246,6 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 			}
 		}
 	case RecoverDeleteEvent:
-		klog.V(2).Infof("Recovering HPA: %s/%s from deleted", hpa.Namespace, hpa.Name)
 		deploy, err := ac.client.AppsV1().Deployments(hpa.Namespace).Get(context.TODO(), hpa.Name, metav1.GetOptions{})
 		if err != nil {
 			return err
