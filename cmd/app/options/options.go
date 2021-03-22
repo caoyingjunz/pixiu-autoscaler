@@ -17,9 +17,21 @@ limitations under the License.
 package options
 
 import (
+	v1 "k8s.io/api/core/v1"
+	clientset "k8s.io/client-go/kubernetes"
+	clientgokubescheme "k8s.io/client-go/kubernetes/scheme"
+	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/client-go/tools/record"
 	cliflag "k8s.io/component-base/cli/flag"
+	"k8s.io/klog"
 
 	"github.com/caoyingjunz/kubez-autoscaler/cmd/app/config"
+	"github.com/caoyingjunz/kubez-autoscaler/pkg/controller"
+)
+
+const (
+	// KubezControllerManagerUserAgent is the userAgent name when starting kubez-autoscaler managers.
+	KubezControllerManagerUserAgent = "kubez-autoscaler-manager"
 )
 
 // Options has all the params needed to run a Autoscaler
@@ -53,8 +65,33 @@ func (o *Options) Flags() (nfs cliflag.NamedFlagSets) {
 	return nfs
 }
 
+// Config return a kubez controller manager config objective
 func (o *Options) Config() (*config.KubezConfiguration, error) {
-	c := &config.KubezConfiguration{}
+	kubeConfig, err := config.BuildKubeConfig()
+	if err != nil {
+		return nil, err
+	}
+	kubeConfig.QPS = 30000
+	kubeConfig.Burst = 30000
+
+	clientBuilder := controller.SimpleControllerClientBuilder{
+		ClientConfig: kubeConfig,
+	}
+
+	client := clientBuilder.ClientOrDie("kubez-client")
+	eventRecorder := createRecorder(client, KubezControllerManagerUserAgent)
+
+	c := &config.KubezConfiguration{
+		Client:        client,
+		EventRecorder: eventRecorder,
+	}
 
 	return c, nil
+}
+
+func createRecorder(kubeClient clientset.Interface, userAgent string) record.EventRecorder {
+	eventBroadcaster := record.NewBroadcaster()
+	eventBroadcaster.StartLogging(klog.Infof)
+	eventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
+	return eventBroadcaster.NewRecorder(clientgokubescheme.Scheme, v1.EventSource{Component: userAgent})
 }
