@@ -25,9 +25,9 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/homedir"
 	componentbaseconfig "k8s.io/component-base/config"
-	"k8s.io/klog"
 )
 
 const (
@@ -73,11 +73,14 @@ type KubezLeaderElectionConfiguration struct {
 type KubezConfiguration struct {
 	metav1.TypeMeta
 
-	Client          clientset.Interface
+	LeaderClient    clientset.Interface
 	InformerFactory informers.SharedInformerFactory
 
 	// LeaderElection defines the configuration of leader election client.
 	LeaderElection KubezLeaderElectionConfiguration
+
+	// event sink
+	EventRecorder record.EventRecorder
 }
 
 // Build the kubeconfig from inClusterConfig, falling back to default config if failed.
@@ -90,6 +93,6 @@ func BuildKubeConfig() (*rest.Config, error) {
 		return config, nil
 	}
 
-	klog.Warning("error creating inClusterConfig, falling back to default config: ", err)
+	//klog.Warning("error creating inClusterConfig, falling back to default config: ", err)
 	return clientcmd.BuildConfigFromFlags("", filepath.Join(homedir.HomeDir(), defaultConfig))
 }

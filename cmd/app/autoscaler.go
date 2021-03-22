@@ -111,9 +111,7 @@ func Run(c *config.KubezConfiguration) error {
 		select {}
 	}
 
-	// TODO
-	leaderElect := true
-	if !leaderElect {
+	if !c.LeaderElection.LeaderElect {
 		run(context.TODO())
 		panic("unreachable")
 	}
@@ -126,18 +124,14 @@ func Run(c *config.KubezConfiguration) error {
 	// add a uniquifier so that two processes on the same host don't accidentally both become active
 	id = id + "_" + string(uuid.NewUUID())
 
-	leaderClientBuilder := controller.SimpleControllerClientBuilder{
-		ClientConfig: kubeConfig,
-	}
-	leaderClient := leaderClientBuilder.ClientOrDie("shared-informers")
 	rl, err := resourcelock.New("endpointsleases",
 		"kube-system",
 		"kubez-autoscaler-manager",
-		leaderClient.CoreV1(),
-		leaderClient.CoordinationV1(),
+		c.LeaderClient.CoreV1(),
+		c.LeaderClient.CoordinationV1(),
 		resourcelock.ResourceLockConfig{
-			Identity: id,
-			//EventRecorder: c.EventRecorder,
+			Identity:      id,
+			EventRecorder: c.EventRecorder,
 		})
 	if err != nil {
 		klog.Fatalf("error creating lock: %v", err)
