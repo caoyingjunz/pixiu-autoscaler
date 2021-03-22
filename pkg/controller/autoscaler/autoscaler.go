@@ -268,9 +268,8 @@ func (ac *AutoscalerController) GetNewestHPAFromResource(hpa *autoscalingv2.Hori
 		if err != nil {
 			return nil, err
 		}
-
 		// check
-		if !controller.IsOwnerReference(d.UID, hpa.OwnerReferences) || d.Annotations == nil || len(d.Annotations) == 0 {
+		if !controller.IsOwnerReference(d.UID, hpa.OwnerReferences) {
 			return nil, nil
 		}
 		uid = d.UID
@@ -280,19 +279,19 @@ func (ac *AutoscalerController) GetNewestHPAFromResource(hpa *autoscalingv2.Hori
 		if err != nil {
 			return nil, err
 		}
-		if !controller.IsOwnerReference(s.UID, hpa.OwnerReferences) || s.Annotations == nil || len(s.Annotations) == 0 {
+		if !controller.IsOwnerReference(s.UID, hpa.OwnerReferences) {
 			return nil, nil
 		}
 		uid = s.UID
 		annotations = s.Annotations
 	}
+	if !controller.IsNeedForHPAs(annotations) {
+		return nil, nil
+	}
 
 	hpaAnnotations, err := controller.PreAndExtractAnnotations(annotations)
 	if err != nil {
 		return nil, err
-	}
-	if len(hpaAnnotations) == 0 {
-		return nil, nil
 	}
 
 	return controller.CreateHorizontalPodAutoscaler(hpa.Name, hpa.Namespace, uid, appsAPIVersion, kind, hpaAnnotations), nil
@@ -322,7 +321,7 @@ func (ac *AutoscalerController) PopKubezAnnotation(hpa *autoscalingv2.Horizontal
 func (ac *AutoscalerController) HandlerAddEvents(obj interface{}) {
 	ascCtx := controller.NewAutoscalerContext(obj)
 	klog.V(2).Infof("Adding %s %s/%s", ascCtx.Kind, ascCtx.Namespace, ascCtx.Name)
-	if len(ascCtx.Annotations) == 0 {
+	if !controller.IsNeedForHPAs(ascCtx.Annotations) {
 		return
 	}
 
@@ -331,21 +330,21 @@ func (ac *AutoscalerController) HandlerAddEvents(obj interface{}) {
 		utilruntime.HandleError(err)
 		return
 	}
-	if len(hpaAnnotations) == 0 {
+
+	hpa := controller.CreateHorizontalPodAutoscaler(ascCtx.Name, ascCtx.Namespace, ascCtx.UID, appsAPIVersion, ascCtx.Kind, hpaAnnotations)
+	if hpa == nil {
 		return
 	}
 
-	if hpa := controller.CreateHorizontalPodAutoscaler(ascCtx.Name, ascCtx.Namespace, ascCtx.UID, appsAPIVersion, ascCtx.Kind, hpaAnnotations); hpa != nil {
-		key, err := controller.KeyFunc(hpa)
-		if err != nil {
-			utilruntime.HandleError(err)
-			return
-		}
-		ac.InsertKubezAnnotation(hpa, AddEvent)
-		ac.store.Update(key, hpa)
-
-		ac.enqueueAutoscaler(hpa)
+	key, err := controller.KeyFunc(hpa)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", hpa, err))
+		return
 	}
+	ac.InsertKubezAnnotation(hpa, AddEvent)
+	ac.store.Update(key, hpa)
+
+	ac.enqueueAutoscaler(hpa)
 }
 
 func (ac *AutoscalerController) HandlerUpdateEvents(old, cur interface{}) {
@@ -378,6 +377,7 @@ func (ac *AutoscalerController) HandlerUpdateEvents(old, cur interface{}) {
 		hpa := controller.CreateHorizontalPodAutoscaler(oldCtx.Name, oldCtx.Namespace, oldCtx.UID, appsAPIVersion, oldCtx.Kind, oldAnnotations)
 		key, err := controller.KeyFunc(hpa)
 		if err != nil {
+			utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", hpa, err))
 			return
 		}
 		ac.InsertKubezAnnotation(hpa, DeleteEvent)
@@ -391,6 +391,7 @@ func (ac *AutoscalerController) HandlerUpdateEvents(old, cur interface{}) {
 	hpa := controller.CreateHorizontalPodAutoscaler(curCtx.Name, curCtx.Namespace, curCtx.UID, appsAPIVersion, curCtx.Kind, curAnnotations)
 	key, err := controller.KeyFunc(hpa)
 	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", hpa, err))
 		return
 	}
 
@@ -408,27 +409,25 @@ func (ac *AutoscalerController) HandlerDeleteEvents(obj interface{}) {
 	ascCtx := controller.NewAutoscalerContext(obj)
 	klog.V(2).Infof("Deleting %s %s/%s", ascCtx.Kind, ascCtx.Namespace, ascCtx.Name)
 
-	// TODO: will move PreAndExtractAnnotations into CreateHorizontalPodAutoscaler
-	hpaAnnotations, err := controller.PreAndExtractAnnotations(ascCtx.Annotations)
+	hpa, err := ac.hpaLister.HorizontalPodAutoscalers(ascCtx.Namespace).Get(ascCtx.Name)
 	if err != nil {
+		if errors.IsNotFound(err) {
+			// HPA has been deleted
+			return
+		}
 		utilruntime.HandleError(err)
 		return
 	}
-	if len(hpaAnnotations) == 0 {
+
+	key, err := controller.KeyFunc(hpa)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", hpa, err))
 		return
 	}
+	ac.InsertKubezAnnotation(hpa, DeleteEvent)
+	ac.store.Update(key, hpa)
 
-	if hpa := controller.CreateHorizontalPodAutoscaler(ascCtx.Name, ascCtx.Namespace, ascCtx.UID, appsAPIVersion, ascCtx.Kind, hpaAnnotations); hpa != nil {
-		key, err := controller.KeyFunc(hpa)
-		if err != nil {
-			utilruntime.HandleError(err)
-			return
-		}
-		ac.InsertKubezAnnotation(hpa, DeleteEvent)
-		ac.store.Update(key, hpa)
-
-		ac.enqueueAutoscaler(hpa)
-	}
+	ac.enqueueAutoscaler(hpa)
 }
 
 func (ac *AutoscalerController) addHPA(obj interface{}) {}

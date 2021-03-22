@@ -39,6 +39,22 @@ const (
 	prometheuAverageUtilization = "prometheu." + AverageUtilization
 )
 
+// To ensure whether we need to maintain the HPA
+func IsNeedForHPAs(annotations map[string]string) bool {
+	if annotations == nil || len(annotations) == 0 {
+		return false
+	}
+
+	for aKey := range annotations {
+		if aKey == cpuAverageUtilization || aKey == memoryAverageUtilization || aKey == prometheuAverageUtilization {
+			return true
+		}
+	}
+
+	return false
+}
+
+// Precheck and extract the HPA Annotations from kubernetes resources
 func PreAndExtractAnnotations(annotations map[string]string) (map[string]int32, error) {
 	hpaAnnotations := make(map[string]int32)
 
@@ -57,9 +73,6 @@ func PreAndExtractAnnotations(annotations map[string]string) (map[string]int32, 
 			kubezMetricType = kubezPrometheusPrefix
 			break
 		}
-	}
-	if kubezMetricType == 0 {
-		return nil, fmt.Errorf("%s is required", "xxx."+AverageUtilization)
 	}
 	hpaAnnotations[KubezMetricType] = kubezMetricType
 
