@@ -268,9 +268,8 @@ func (ac *AutoscalerController) GetNewestHPAFromResource(hpa *autoscalingv2.Hori
 		if err != nil {
 			return nil, err
 		}
-
 		// check
-		if !controller.IsOwnerReference(d.UID, hpa.OwnerReferences) || d.Annotations == nil || len(d.Annotations) == 0 {
+		if !controller.IsOwnerReference(d.UID, hpa.OwnerReferences) {
 			return nil, nil
 		}
 		uid = d.UID
@@ -280,13 +279,16 @@ func (ac *AutoscalerController) GetNewestHPAFromResource(hpa *autoscalingv2.Hori
 		if err != nil {
 			return nil, err
 		}
-		if !controller.IsOwnerReference(s.UID, hpa.OwnerReferences) || s.Annotations == nil || len(s.Annotations) == 0 {
+		if !controller.IsOwnerReference(s.UID, hpa.OwnerReferences) {
 			return nil, nil
 		}
 		uid = s.UID
 		annotations = s.Annotations
 	}
 
+	if !controller.IsNeedForHPAs(annotations) {
+		return nil, nil
+	}
 	hpaAnnotations, err := controller.PreAndExtractAnnotations(annotations)
 	if err != nil {
 		return nil, err
