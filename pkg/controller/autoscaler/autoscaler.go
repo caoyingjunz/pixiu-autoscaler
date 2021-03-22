@@ -268,9 +268,8 @@ func (ac *AutoscalerController) GetNewestHPAFromResource(hpa *autoscalingv2.Hori
 		if err != nil {
 			return nil, err
 		}
-
 		// check
-		if !controller.IsOwnerReference(d.UID, hpa.OwnerReferences) || d.Annotations == nil || len(d.Annotations) == 0 {
+		if !controller.IsOwnerReference(d.UID, hpa.OwnerReferences) {
 			return nil, nil
 		}
 		uid = d.UID
@@ -280,19 +279,19 @@ func (ac *AutoscalerController) GetNewestHPAFromResource(hpa *autoscalingv2.Hori
 		if err != nil {
 			return nil, err
 		}
-		if !controller.IsOwnerReference(s.UID, hpa.OwnerReferences) || s.Annotations == nil || len(s.Annotations) == 0 {
+		if !controller.IsOwnerReference(s.UID, hpa.OwnerReferences) {
 			return nil, nil
 		}
 		uid = s.UID
 		annotations = s.Annotations
 	}
+	if !controller.IsNeedForHPAs(annotations) {
+		return nil, nil
+	}
 
 	hpaAnnotations, err := controller.PreAndExtractAnnotations(annotations)
 	if err != nil {
 		return nil, err
-	}
-	if len(hpaAnnotations) == 0 {
-		return nil, nil
 	}
 
 	return controller.CreateHorizontalPodAutoscaler(hpa.Name, hpa.Namespace, uid, appsAPIVersion, kind, hpaAnnotations), nil
@@ -322,7 +321,7 @@ func (ac *AutoscalerController) PopKubezAnnotation(hpa *autoscalingv2.Horizontal
 func (ac *AutoscalerController) HandlerAddEvents(obj interface{}) {
 	ascCtx := controller.NewAutoscalerContext(obj)
 	klog.V(2).Infof("Adding %s %s/%s", ascCtx.Kind, ascCtx.Namespace, ascCtx.Name)
-	if len(ascCtx.Annotations) == 0 {
+	if !controller.IsNeedForHPAs(ascCtx.Annotations) {
 		return
 	}
 
@@ -408,7 +407,7 @@ func (ac *AutoscalerController) HandlerDeleteEvents(obj interface{}) {
 	ascCtx := controller.NewAutoscalerContext(obj)
 	klog.V(2).Infof("Deleting %s %s/%s", ascCtx.Kind, ascCtx.Namespace, ascCtx.Name)
 
-	// TODO: will move PreAndExtractAnnotations into CreateHorizontalPodAutoscaler
+	// TODO 直接删除
 	hpaAnnotations, err := controller.PreAndExtractAnnotations(ascCtx.Annotations)
 	if err != nil {
 		utilruntime.HandleError(err)
