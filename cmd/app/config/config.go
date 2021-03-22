@@ -25,6 +25,7 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/homedir"
 	componentbaseconfig "k8s.io/component-base/config"
 	"k8s.io/klog"
@@ -78,6 +79,9 @@ type KubezConfiguration struct {
 
 	// LeaderElection defines the configuration of leader election client.
 	LeaderElection KubezLeaderElectionConfiguration
+
+	// event sink
+	EventRecorder record.EventRecorder
 }
 
 // Build the kubeconfig from inClusterConfig, falling back to default config if failed.

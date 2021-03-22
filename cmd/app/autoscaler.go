@@ -111,9 +111,7 @@ func Run(c *config.KubezConfiguration) error {
 		select {}
 	}
 
-	// TODO
-	leaderElect := true
-	if !leaderElect {
+	if !c.LeaderElection.LeaderElect {
 		run(context.TODO())
 		panic("unreachable")
 	}
