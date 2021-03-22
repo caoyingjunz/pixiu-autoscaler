@@ -355,26 +355,20 @@ func (ac *AutoscalerController) HandlerUpdateEvents(old, cur interface{}) {
 	if reflect.DeepEqual(oldCtx.Annotations, curCtx.Annotations) {
 		return
 	}
-
-	// No need to handler error for old, it always success or nil
-	oldAnnotations, _ := controller.PreAndExtractAnnotations(oldCtx.Annotations)
-	curAnnotations, err := controller.PreAndExtractAnnotations(curCtx.Annotations)
-	if err != nil {
-		utilruntime.HandleError(err)
-		return
-	}
-
-	// Do noting, return directly if HPA Annotations stuff not changed
-	if reflect.DeepEqual(oldAnnotations, curAnnotations) {
-		return
-	}
-
-	oldExists := len(oldAnnotations) != 0
-	curExists := len(curAnnotations) != 0
+	oldExists := controller.IsNeedForHPAs(oldCtx.Annotations)
+	curExists := controller.IsNeedForHPAs(curCtx.Annotations)
 
 	// Delete HPAs
 	if oldExists && !curExists {
-		hpa := controller.CreateHorizontalPodAutoscaler(oldCtx.Name, oldCtx.Namespace, oldCtx.UID, appsAPIVersion, oldCtx.Kind, oldAnnotations)
+		hpa, err := ac.hpaLister.HorizontalPodAutoscalers(oldCtx.Namespace).Get(oldCtx.Name)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				return
+			}
+			utilruntime.HandleError(err)
+			return
+		}
+
 		key, err := controller.KeyFunc(hpa)
 		if err != nil {
 			utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", hpa, err))
@@ -388,6 +382,11 @@ func (ac *AutoscalerController) HandlerUpdateEvents(old, cur interface{}) {
 	}
 
 	// Add or Update HPAs
+	curAnnotations, err := controller.PreAndExtractAnnotations(curCtx.Annotations)
+	if err != nil {
+		utilruntime.HandleError(err)
+		return
+	}
 	hpa := controller.CreateHorizontalPodAutoscaler(curCtx.Name, curCtx.Namespace, curCtx.UID, appsAPIVersion, curCtx.Kind, curAnnotations)
 	key, err := controller.KeyFunc(hpa)
 	if err != nil {
@@ -416,6 +415,9 @@ func (ac *AutoscalerController) HandlerDeleteEvents(obj interface{}) {
 			return
 		}
 		utilruntime.HandleError(err)
+		return
+	}
+	if !controller.IsOwnerReference(ascCtx.UID, hpa.OwnerReferences) {
 		return
 	}
 
