@@ -73,7 +73,7 @@ func createRecorder(kubeClient clientset.Interface, userAgent string) record.Eve
 }
 
 // Config return a kubez controller manager config objective
-func (o *Options) Config() (*config.KubezConfiguration, error) {
+func (o *Options) Config(leaderElect bool) (*config.KubezConfiguration, error) {
 	kubeConfig, err := config.BuildKubeConfig()
 	if err != nil {
 		return nil, err
@@ -92,7 +92,7 @@ func (o *Options) Config() (*config.KubezConfiguration, error) {
 		LeaderClient:  client,
 		EventRecorder: eventRecorder,
 	}
-	c.LeaderElection.LeaderElect = true
+	c.LeaderElection.LeaderElect = leaderElect
 
 	return c, nil
 }
