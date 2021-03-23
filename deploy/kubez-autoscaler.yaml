@@ -59,6 +59,9 @@ spec:
     spec:
       containers:
         - image: jacky06/kubez-autoscaler-controller:v0.0.1
+          command:
+            - kubez-autoscaler-controller
+            - --leader-elect=true
           imagePullPolicy: IfNotPresent
           name: kubez-autoscaler-controller
       serviceAccountName: kubez

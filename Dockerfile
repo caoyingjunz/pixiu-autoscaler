@@ -21,7 +21,5 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on GOPROXY=https://goproxy
 #FROM gcr.io/distroless/static:nonroot
 FROM jacky06/static:nonroot
 WORKDIR /
-COPY --from=builder /workspace/manager .
+COPY --from=builder /workspace/manager /usr/local/bin/kubez-autoscaler-controller
 USER 65532:65532
-
-ENTRYPOINT ["/manager"]
