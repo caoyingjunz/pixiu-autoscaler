@@ -1,6 +1,6 @@
 # Kubez-autoscaler Overview
 
-`kubez-autoscaler` 通过为 `deployment` / `statefulset` 添加 `annotations` 的方式，自动管理维护对应 `HorizontalPodAutoscaler` 的生命周期.
+`kubez-autoscaler` 通过为 `deployment` / `statefulset` 添加 `annotations` 的方式，自动维护对应 `HorizontalPodAutoscaler` 的生命周期.
 
 ### Installing
 
