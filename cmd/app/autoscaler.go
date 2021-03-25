@@ -72,6 +72,8 @@ the core control loops shipped with advanced HPA.`,
 			return nil
 		},
 	}
+
+	// TODO: Parse the args form command line for cobra root cmd
 	cmd.Flags().BoolVarP(&leaderElect, "leader-elect", "l", false, ""+
 		"Start a leader election client and gain leadership before "+
 		"executing the main loop. Enable this when running replicated "+
