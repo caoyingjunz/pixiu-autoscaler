@@ -196,19 +196,22 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 
 	switch event {
 	case AddEvent:
-		_, err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(hpa.Namespace).Create(context.TODO(), hpa, metav1.CreateOptions{})
+		_, err = ac.client.AutoscalingV2beta2().
+			HorizontalPodAutoscalers(hpa.Namespace).Create(context.TODO(), hpa, metav1.CreateOptions{})
 		if errors.IsAlreadyExists(err) {
 			// The HPA has added
 			return nil
 		}
 	case UpdateEvent:
-		_, err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(hpa.Namespace).Update(context.TODO(), hpa, metav1.UpdateOptions{})
+		_, err = ac.client.AutoscalingV2beta2().
+			HorizontalPodAutoscalers(hpa.Namespace).Update(context.TODO(), hpa, metav1.UpdateOptions{})
 		if errors.IsNotFound(err) {
 			// The HPA has deleted
 			return nil
 		}
 	case DeleteEvent:
-		err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(hpa.Namespace).Delete(context.TODO(), hpa.Name, metav1.DeleteOptions{})
+		err = ac.client.AutoscalingV2beta2().
+			HorizontalPodAutoscalers(hpa.Namespace).Delete(context.TODO(), hpa.Name, metav1.DeleteOptions{})
 		if errors.IsNotFound(err) {
 			// The HPA has deleted
 			return nil
@@ -219,6 +222,7 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 		if err != nil {
 			return err
 		}
+		// no need to Recover HPA from Update event
 		if newHPA == nil {
 			return nil
 		}
@@ -226,8 +230,8 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 			klog.V(2).Infof("HPA: %s/%s spec is not changed, no need to updated", hpa.Namespace, hpa.Name)
 			return nil
 		}
-
-		_, err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(newHPA.Namespace).Update(context.TODO(), newHPA, metav1.UpdateOptions{})
+		_, err = ac.client.AutoscalingV2beta2().
+			HorizontalPodAutoscalers(newHPA.Namespace).Update(context.TODO(), newHPA, metav1.UpdateOptions{})
 		if err != nil {
 			if errors.IsNotFound(err) {
 				return nil
@@ -239,11 +243,12 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 		if err != nil {
 			return err
 		}
+		// no need to Recover HPA from Delete event
 		if newHPA == nil {
 			return nil
 		}
-
-		_, err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(newHPA.Namespace).Create(context.TODO(), newHPA, metav1.CreateOptions{})
+		_, err = ac.client.AutoscalingV2beta2().
+			HorizontalPodAutoscalers(newHPA.Namespace).Create(context.TODO(), newHPA, metav1.CreateOptions{})
 		if err != nil {
 			if errors.IsAlreadyExists(err) {
 				return nil
@@ -251,14 +256,15 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 			return err
 		}
 	default:
-		return fmt.Errorf("unsupported handlers event %s", event)
+		return fmt.Errorf("Unsupported handlers event %s", event)
 	}
 
 	return err
 }
 
 // GetNewestHPA will get newest HPA from kubernetes resources
-func (ac *AutoscalerController) GetNewestHPAFromResource(hpa *autoscalingv2.HorizontalPodAutoscaler) (*autoscalingv2.HorizontalPodAutoscaler, error) {
+func (ac *AutoscalerController) GetNewestHPAFromResource(
+	hpa *autoscalingv2.HorizontalPodAutoscaler) (*autoscalingv2.HorizontalPodAutoscaler, error) {
 	var annotations map[string]string
 	var uid types.UID
 	kind := hpa.Spec.ScaleTargetRef.Kind
