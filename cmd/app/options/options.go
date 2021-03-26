@@ -17,12 +17,12 @@ limitations under the License.
 package options
 
 import (
+	"github.com/spf13/cobra"
 	v1 "k8s.io/api/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	clientgokubescheme "k8s.io/client-go/kubernetes/scheme"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/record"
-	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog"
 
 	"github.com/caoyingjunz/kubez-autoscaler/cmd/app/config"
@@ -55,14 +55,54 @@ func NewOptions() (*Options, error) {
 	return o, nil
 }
 
-// Flags returns flags for a specific scheduler by section name
-func (o *Options) Flags() (nfs cliflag.NamedFlagSets) {
-	fs := nfs.FlagSet("misc")
-	fs.StringVar(&o.ConfigFile, "config", o.ConfigFile, "The path to the configuration file. Flags override values in this file.")
+var (
+	leaderElect       bool
+	leaseDuration     int
+	renewDeadline     int
+	retryPeriod       int
+	resourceLock      string
+	resourceName      string
+	resourceNamespace string
+)
 
-	config.BindFlags(&o.ComponentConfig.LeaderElection.LeaderElectionConfiguration, nfs.FlagSet("leader election"))
+const (
+	LeaseDuration = 15
+	RenewDeadline = 10
+	RetryPeriod   = 2
 
-	return nfs
+	ResourceLock      = "endpointsleases"
+	ResourceName      = "kubez-autoscaler-manager"
+	ResourceNamespace = "kube-system"
+)
+
+// BindFlags binds the KubezConfiguration struct fields
+func (o *Options) BindFlags(cmd *cobra.Command) {
+	cmd.Flags().BoolVarP(&leaderElect, "leader-elect", "l", false, ""+
+		"Start a leader election client and gain leadership before "+
+		"executing the main loop. Enable this when running replicated "+
+		"components for high availability.")
+	cmd.Flags().IntVarP(&leaseDuration, "leader-elect-lease-duration", "", LeaseDuration, ""+
+		"The duration that non-leader candidates will wait after observing a leadership "+
+		"renewal until attempting to acquire leadership of a led but unrenewed leader "+
+		"slot. This is effectively the maximum duration that a leader can be stopped "+
+		"before it is replaced by another candidate. This is only applicable if leader "+
+		"election is enabled.")
+	cmd.Flags().IntVarP(&renewDeadline, "leader-elect-renew-deadline", "", RenewDeadline, ""+
+		"The interval between attempts by the acting master to renew a leadership slot "+
+		"before it stops leading. This must be less than or equal to the lease duration. "+
+		"This is only applicable if leader election is enabled.")
+	cmd.Flags().IntVarP(&retryPeriod, "leader-elect-retry-period", "", RetryPeriod, ""+
+		"The duration the clients should wait between attempting acquisition and renewal "+
+		"of a leadership. This is only applicable if leader election is enabled.")
+	cmd.Flags().StringVarP(&resourceLock, "leader-elect-resource-lock", "", ResourceLock, ""+
+		"The type of resource object that is used for locking during "+
+		"leader election. Supported options are `endpoints` (default) and `configmaps`.")
+	cmd.Flags().StringVarP(&resourceName, "leader-elect-resource-name", "", ResourceName, ""+
+		"The name of resource object that is used for locking during "+
+		"leader election.")
+	cmd.Flags().StringVarP(&resourceNamespace, "leader-elect-resource-namespace", "", ResourceNamespace, ""+
+		"The namespace of resource object that is used for locking during "+
+		"leader election.")
 }
 
 func createRecorder(kubeClient clientset.Interface, userAgent string) record.EventRecorder {
@@ -73,7 +113,7 @@ func createRecorder(kubeClient clientset.Interface, userAgent string) record.Eve
 }
 
 // Config return a kubez controller manager config objective
-func (o *Options) Config(leaderElect bool) (*config.KubezConfiguration, error) {
+func (o *Options) Config() (*config.KubezConfiguration, error) {
 	kubeConfig, err := config.BuildKubeConfig()
 	if err != nil {
 		return nil, err
@@ -87,13 +127,13 @@ func (o *Options) Config(leaderElect bool) (*config.KubezConfiguration, error) {
 
 	client := clientBuilder.ClientOrDie("leader-client")
 	eventRecorder := createRecorder(client, KubezControllerManagerUserAgent)
-
-	c := &config.KubezConfiguration{
-		LeaderClient:  client,
-		EventRecorder: eventRecorder,
+	le := config.KubezLeaderElectionConfiguration{
+		,
 	}
-	// TODO
-	c.LeaderElection.LeaderElect = leaderElect
 
-	return c, nil
+	return &config.KubezConfiguration{
+		LeaderClient:   client,
+		EventRecorder:  eventRecorder,
+		LeaderElection: le,
+	}, nil
 }
