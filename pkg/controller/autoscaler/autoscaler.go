@@ -199,6 +199,7 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 		_, err = ac.client.AutoscalingV2beta2().
 			HorizontalPodAutoscalers(hpa.Namespace).Create(context.TODO(), hpa, metav1.CreateOptions{})
 		if errors.IsAlreadyExists(err) {
+			ac.eventRecorder.Eventf(hpa)
 			// The HPA has added
 			return nil
 		}
