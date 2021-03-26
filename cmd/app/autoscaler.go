@@ -39,8 +39,6 @@ const (
 	workers = 5
 )
 
-var leaderElect bool
-
 // NewAutoscalerCommand creates a *cobra.Command object with default parameters
 func NewAutoscalerCommand() *cobra.Command {
 	s, err := options.NewOptions()
@@ -53,7 +51,7 @@ func NewAutoscalerCommand() *cobra.Command {
 		Long: `The kubez autoscaler manager is a daemon than embeds
 the core control loops shipped with advanced HPA.`,
 		Run: func(cmd *cobra.Command, args []string) {
-			c, err := s.Config(leaderElect)
+			c, err := s.Config()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%v\n", err)
 				os.Exit(1)
@@ -73,11 +71,8 @@ the core control loops shipped with advanced HPA.`,
 		},
 	}
 
-	// TODO: Parse the args form command line for cobra root cmd
-	cmd.Flags().BoolVarP(&leaderElect, "leader-elect", "l", false, ""+
-		"Start a leader election client and gain leadership before "+
-		"executing the main loop. Enable this when running replicated "+
-		"components for high availability.")
+	// BindFlags binds the Configuration struct fields to a cmd
+	s.BindFlags(cmd)
 
 	return cmd
 }
