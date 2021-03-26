@@ -4,7 +4,7 @@
 
 ### Installing
 
-`kubez-autoscaler` 控制器的安装非常简单，通过 `kubectl`, 执行 `apply` 如下文件即可完成安装.
+`kubez-autoscaler` 控制器的安装非常简单，通过 `kubectl` 执行 `apply` 如下文件即可完成安装.
 
 ```yaml
 apiVersion: v1
