@@ -21,7 +21,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/util/uuid"
@@ -39,8 +38,6 @@ const (
 	workers = 5
 )
 
-var leaderElect bool
-
 // NewAutoscalerCommand creates a *cobra.Command object with default parameters
 func NewAutoscalerCommand() *cobra.Command {
 	s, err := options.NewOptions()
@@ -53,7 +50,7 @@ func NewAutoscalerCommand() *cobra.Command {
 		Long: `The kubez autoscaler manager is a daemon than embeds
 the core control loops shipped with advanced HPA.`,
 		Run: func(cmd *cobra.Command, args []string) {
-			c, err := s.Config(leaderElect)
+			c, err := s.Config()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%v\n", err)
 				os.Exit(1)
@@ -73,11 +70,8 @@ the core control loops shipped with advanced HPA.`,
 		},
 	}
 
-	// TODO: Parse the args form command line for cobra root cmd
-	cmd.Flags().BoolVarP(&leaderElect, "leader-elect", "l", false, ""+
-		"Start a leader election client and gain leadership before "+
-		"executing the main loop. Enable this when running replicated "+
-		"components for high availability.")
+	// BindFlags binds the Configuration struct fields to a cmd
+	s.BindFlags(cmd)
 
 	return cmd
 }
@@ -133,9 +127,10 @@ func Run(c *config.KubezConfiguration) error {
 	// add a uniquifier so that two processes on the same host don't accidentally both become active
 	id = id + "_" + string(uuid.NewUUID())
 
-	rl, err := resourcelock.New("endpointsleases",
-		"kube-system",
-		"kubez-autoscaler-manager",
+	rl, err := resourcelock.New(
+		c.LeaderElection.ResourceLock,
+		c.LeaderElection.ResourceNamespace,
+		c.LeaderElection.ResourceName,
 		c.LeaderClient.CoreV1(),
 		c.LeaderClient.CoordinationV1(),
 		resourcelock.ResourceLockConfig{
@@ -148,9 +143,9 @@ func Run(c *config.KubezConfiguration) error {
 
 	leaderelection.RunOrDie(context.TODO(), leaderelection.LeaderElectionConfig{
 		Lock:          rl,
-		LeaseDuration: time.Second * 15,
-		RenewDeadline: time.Second * 10,
-		RetryPeriod:   time.Second * 2,
+		LeaseDuration: c.LeaderElection.LeaseDuration.Duration,
+		RenewDeadline: c.LeaderElection.RenewDeadline.Duration,
+		RetryPeriod:   c.LeaderElection.RetryPeriod.Duration,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: run,
 			OnStoppedLeading: func() {
