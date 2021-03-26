@@ -199,24 +199,33 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 	case AddEvent:
 		_, err = ac.client.AutoscalingV2beta2().
 			HorizontalPodAutoscalers(hpa.Namespace).Create(context.TODO(), hpa, metav1.CreateOptions{})
-		if errors.IsAlreadyExists(err) {
-			// The HPA has added
-			return nil
+		if err != nil && !errors.IsAlreadyExists(err) {
+			msg := fmt.Sprintf("Failed to create HPA %s/%s for %s", hpa.Namespace, hpa.Name, hpa.OwnerReferences[0].Kind)
+			ac.eventRecorder.Eventf(hpa, v1.EventTypeWarning, "FailedCreateHPA", msg)
+			return err
 		}
+		ac.eventRecorder.Eventf(hpa, v1.EventTypeNormal, "CreateHPA",
+			fmt.Sprintf("Create HPA %s/%s for %s success", hpa.Namespace, hpa.Name, hpa.OwnerReferences[0].Kind))
 	case UpdateEvent:
 		_, err = ac.client.AutoscalingV2beta2().
 			HorizontalPodAutoscalers(hpa.Namespace).Update(context.TODO(), hpa, metav1.UpdateOptions{})
-		if errors.IsNotFound(err) {
-			// The HPA has deleted
-			return nil
+		if err != nil && !errors.IsNotFound(err) {
+			msg := fmt.Sprintf("Failed to update HPA %s/%s for %s", hpa.Namespace, hpa.Name, hpa.OwnerReferences[0].Kind)
+			ac.eventRecorder.Eventf(hpa, v1.EventTypeWarning, "FailedUpdateHPA", msg)
+			return err
 		}
+		ac.eventRecorder.Eventf(hpa, v1.EventTypeNormal, "UpdateHPA",
+			fmt.Sprintf("Update HPA %s/%s for %s success", hpa.Namespace, hpa.Name, hpa.OwnerReferences[0].Kind))
 	case DeleteEvent:
 		err = ac.client.AutoscalingV2beta2().
 			HorizontalPodAutoscalers(hpa.Namespace).Delete(context.TODO(), hpa.Name, metav1.DeleteOptions{})
-		if errors.IsNotFound(err) {
-			// The HPA has deleted
-			return nil
+		if err != nil && !errors.IsNotFound(err) {
+			msg := fmt.Sprintf("Failed to delete HPA %s/%s for %s", hpa.Namespace, hpa.Name, hpa.OwnerReferences[0].Kind)
+			ac.eventRecorder.Eventf(hpa, v1.EventTypeWarning, "FailedDeleteHPA", msg)
+			return err
 		}
+		ac.eventRecorder.Eventf(hpa, v1.EventTypeNormal, "DeleteHPA",
+			fmt.Sprintf("Delete HPA %s/%s for %s success", hpa.Namespace, hpa.Name, hpa.OwnerReferences[0].Kind))
 	case RecoverUpdateEvent:
 		// Since the HPA has been updated, we need to get origin spec to check whether it shouled be recover
 		newHPA, err := ac.GetNewestHPAFromResource(hpa)
