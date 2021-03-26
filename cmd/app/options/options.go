@@ -17,12 +17,12 @@ limitations under the License.
 package options
 
 import (
+	"github.com/spf13/cobra"
 	v1 "k8s.io/api/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	clientgokubescheme "k8s.io/client-go/kubernetes/scheme"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/record"
-	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog"
 
 	"github.com/caoyingjunz/kubez-autoscaler/cmd/app/config"
@@ -55,14 +55,17 @@ func NewOptions() (*Options, error) {
 	return o, nil
 }
 
-// Flags returns flags for a specific scheduler by section name
-func (o *Options) Flags() (nfs cliflag.NamedFlagSets) {
-	fs := nfs.FlagSet("misc")
-	fs.StringVar(&o.ConfigFile, "config", o.ConfigFile, "The path to the configuration file. Flags override values in this file.")
+var (
+	leaderElect bool
+)
 
-	config.BindFlags(&o.ComponentConfig.LeaderElection.LeaderElectionConfiguration, nfs.FlagSet("leader election"))
+// BindFlags binds the KubezConfiguration struct fields to a Options
+func (o *Options) BindFlags(cmd *cobra.Command) {
+	cmd.Flags().BoolVarP(&leaderElect, "leader-elect", "l", false, ""+
+		"Start a leader election client and gain leadership before "+
+		"executing the main loop. Enable this when running replicated "+
+		"components for high availability.")
 
-	return nfs
 }
 
 func createRecorder(kubeClient clientset.Interface, userAgent string) record.EventRecorder {
@@ -73,7 +76,7 @@ func createRecorder(kubeClient clientset.Interface, userAgent string) record.Eve
 }
 
 // Config return a kubez controller manager config objective
-func (o *Options) Config(leaderElect bool) (*config.KubezConfiguration, error) {
+func (o *Options) Config() (*config.KubezConfiguration, error) {
 	kubeConfig, err := config.BuildKubeConfig()
 	if err != nil {
 		return nil, err
