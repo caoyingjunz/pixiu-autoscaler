@@ -22,6 +22,9 @@ import (
 	"fmt"
 	"os"
 
+	// import pprof for performance diagnosed
+	_ "net/http/pprof"
+
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/tools/leaderelection"
