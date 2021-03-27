@@ -295,12 +295,7 @@ func (ac *AutoscalerController) GetNewestHPAFromResource(
 		return nil, nil
 	}
 
-	hpaAnnotations, err := controller.PreAndExtractAnnotations(annotations)
-	if err != nil {
-		return nil, err
-	}
-
-	return controller.CreateHorizontalPodAutoscaler(hpa.Name, hpa.Namespace, uid, appsAPIVersion, kind, hpaAnnotations), nil
+	return controller.CreateHorizontalPodAutoscaler(hpa.Name, hpa.Namespace, uid, appsAPIVersion, kind, annotations), nil
 }
 
 // To insert annotation to distinguish the event type

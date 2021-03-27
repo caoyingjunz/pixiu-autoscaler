@@ -23,20 +23,27 @@ import (
 
 const (
 	KubezRootPrefix string = "hpa.caoyingjunz.io"
-	KubezMetricType string = "kubezMetricType"
 	KubezSeparator  string = "/"
 
-	kubezCpuPrefix        int32 = 1
-	kubezMemoryPrefix     int32 = 2
-	kubezPrometheusPrefix int32 = 3
+	MinReplicas              string = "hpa.caoyingjunz.io/minReplicas"
+	MaxReplicas              string = "hpa.caoyingjunz.io/maxReplicas"
+	targetAverageUtilization string = "targetAverageUtilization"
+	targetAverageValue       string = "targetAverageValue"
 
-	MinReplicas        string = "hpa.caoyingjunz.io/minReplicas"
-	MaxReplicas        string = "hpa.caoyingjunz.io/maxReplicas"
-	AverageUtilization string = "hpa.caoyingjunz.io/AverageUtilization"
+	// TODO prometheus is not supported for now.
+	cpu        string = "cpu"
+	memory     string = "memory"
+	prometheus string = "prometheus"
 
-	cpuAverageUtilization       = "cpu." + AverageUtilization
-	memoryAverageUtilization    = "memory." + AverageUtilization
-	prometheuAverageUtilization = "prometheu." + AverageUtilization
+	cpuAverageUtilization        = "cpu." + KubezRootPrefix + KubezSeparator + targetAverageUtilization
+	memoryAverageUtilization     = "memory." + KubezRootPrefix + KubezSeparator + targetAverageUtilization
+	prometheusAverageUtilization = "prometheus." + KubezRootPrefix + KubezSeparator + targetAverageUtilization
+
+	// CPU, in cores. (500m = .5 cores)
+	// Memory, in bytes. (500Gi = 500GiB = 500 * 1024 * 1024 * 1024)
+	cpuAverageValue        = "cpu." + KubezRootPrefix + KubezSeparator + targetAverageValue
+	memoryAverageValue     = "memory." + KubezRootPrefix + KubezSeparator + targetAverageValue
+	prometheusAverageValue = "prometheus." + KubezRootPrefix + KubezSeparator + targetAverageValue
 )
 
 // To ensure whether we need to maintain the HPA
@@ -44,9 +51,12 @@ func IsNeedForHPAs(annotations map[string]string) bool {
 	if annotations == nil || len(annotations) == 0 {
 		return false
 	}
-
+	// TODO: regexp is better
 	for aKey := range annotations {
-		if aKey == cpuAverageUtilization || aKey == memoryAverageUtilization || aKey == prometheuAverageUtilization {
+		if aKey == cpuAverageUtilization ||
+			aKey == memoryAverageUtilization ||
+			aKey == cpuAverageValue ||
+			aKey == memoryAverageValue {
 			return true
 		}
 	}
@@ -54,64 +64,40 @@ func IsNeedForHPAs(annotations map[string]string) bool {
 	return false
 }
 
-// Precheck and extract the HPA Annotations from kubernetes resources
-func PreAndExtractAnnotations(annotations map[string]string) (map[string]int32, error) {
-	hpaAnnotations := make(map[string]int32)
-
-	// Extract HPA items form annotations
-	var kubezMetricType int32
-	for aKey := range annotations {
-		if aKey == cpuAverageUtilization {
-			kubezMetricType = kubezCpuPrefix
-			break
+func ExtractReplicas(annotations map[string]string, replicasType string) (int32, error) {
+	var Replicas int64
+	var err error
+	switch replicasType {
+	case MinReplicas:
+		minReplicas, exists := annotations[MinReplicas]
+		if exists {
+			Replicas, err = strconv.ParseInt(minReplicas, 10, 32)
+			if err != nil {
+				return 0, err
+			}
+		} else {
+			// Default minReplicas is 1
+			Replicas = int64(1)
 		}
-		if aKey == memoryAverageUtilization {
-			kubezMetricType = kubezMemoryPrefix
-			break
+	case MaxReplicas:
+		maxReplicas, exists := annotations[MaxReplicas]
+		if !exists {
+			return 0, fmt.Errorf("%s is required", MaxReplicas)
 		}
-		if aKey == prometheuAverageUtilization {
-			kubezMetricType = kubezPrometheusPrefix
-			break
-		}
-	}
-	hpaAnnotations[KubezMetricType] = kubezMetricType
-
-	switch kubezMetricType {
-	case kubezCpuPrefix:
-		averageUtilizationInt64, err := strconv.ParseInt(annotations[cpuAverageUtilization], 10, 32)
-		if err != nil {
-			return nil, err
-		}
-		if averageUtilizationInt64 <= 0 || averageUtilizationInt64 > 100 {
-			return nil, fmt.Errorf("averageUtilization should be range 1 between 100")
-		}
-		hpaAnnotations[AverageUtilization] = int32(averageUtilizationInt64)
+		Replicas, err = strconv.ParseInt(maxReplicas, 10, 32)
 	}
 
-	// Max Replicas
-	maxReplicas, exists := annotations[MaxReplicas]
-	if !exists {
-		return nil, fmt.Errorf("%s is required", MaxReplicas)
-	}
-	maxReplicasInt64, err := strconv.ParseInt(maxReplicas, 10, 32)
+	return int32(Replicas), err
+}
+
+func ExtractAverageUtilization(averageUtilization string) (int32, error) {
+	value64, err := strconv.ParseInt(averageUtilization, 10, 32)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	hpaAnnotations[MaxReplicas] = int32(maxReplicasInt64)
-
-	// Min Replicas
-	var minReplicasInt64 int64
-	minReplicas, exists := annotations[MinReplicas]
-	if exists {
-		minReplicasInt64, err = strconv.ParseInt(minReplicas, 10, 32)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		// Default minReplicas is 1
-		minReplicasInt64 = int64(1)
+	if value64 <= 0 && value64 > 100 {
+		return 0, fmt.Errorf("averageUtilization should be range 1 between 100")
 	}
-	hpaAnnotations[MinReplicas] = int32(minReplicasInt64)
 
-	return hpaAnnotations, nil
+	return int32(value64), nil
 }
