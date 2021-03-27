@@ -4,7 +4,7 @@
 
 ### Installing
 
-`kubez-autoscaler` 控制器的安装非常简单，通过 `kubectl` 执行 `apply` 如下文件即可完成安装.
+`kubez-autoscaler` 控制器的安装非常简单，通过 `kubectl` 执行 `apply` 如下文件即可完成安装，真正做到猩猩都能使用.
 
 ```yaml
 apiVersion: v1
@@ -90,7 +90,7 @@ metadata:
     ...
     hpa.caoyingjunz.io/minReplicas: "2"  # MINPODS
     hpa.caoyingjunz.io/maxReplicas: "6"  # MAXPODS
-    cpu.hpa.caoyingjunz.io/AverageUtilization: "60"  # TARGETS
+    cpu.hpa.caoyingjunz.io/targetAverageUtilization: "60"  # TARGETS
     ...
   name: test1
   namespace: default

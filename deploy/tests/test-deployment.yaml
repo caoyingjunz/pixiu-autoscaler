@@ -4,7 +4,7 @@ metadata:
   annotations:
     hpa.caoyingjunz.io/minReplicas: "1"
     hpa.caoyingjunz.io/maxReplicas: "3"
-    cpu.hpa.caoyingjunz.io/AverageUtilization: "90"
+    cpu.hpa.caoyingjunz.io/targetAverageUtilization: "60"
   labels:
     app: test1
   name: test1
