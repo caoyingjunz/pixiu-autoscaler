@@ -295,12 +295,7 @@ func (ac *AutoscalerController) GetNewestHPAFromResource(
 		return nil, nil
 	}
 
-	hpaAnnotations, err := controller.PreAndExtractAnnotations(annotations)
-	if err != nil {
-		return nil, err
-	}
-
-	return controller.CreateHorizontalPodAutoscaler(hpa.Name, hpa.Namespace, uid, appsAPIVersion, kind, hpaAnnotations), nil
+	return controller.CreateHorizontalPodAutoscaler(hpa.Name, hpa.Namespace, uid, appsAPIVersion, kind, annotations)
 }
 
 // To insert annotation to distinguish the event type
@@ -331,13 +326,11 @@ func (ac *AutoscalerController) HandlerAddEvents(obj interface{}) {
 		return
 	}
 
-	hpaAnnotations, err := controller.PreAndExtractAnnotations(ascCtx.Annotations)
+	hpa, err := controller.CreateHorizontalPodAutoscaler(ascCtx.Name, ascCtx.Namespace, ascCtx.UID, appsAPIVersion, ascCtx.Kind, ascCtx.Annotations)
 	if err != nil {
 		utilruntime.HandleError(err)
 		return
 	}
-
-	hpa := controller.CreateHorizontalPodAutoscaler(ascCtx.Name, ascCtx.Namespace, ascCtx.UID, appsAPIVersion, ascCtx.Kind, hpaAnnotations)
 	if hpa == nil {
 		return
 	}
@@ -388,12 +381,12 @@ func (ac *AutoscalerController) HandlerUpdateEvents(old, cur interface{}) {
 	}
 
 	// Add or Update HPAs
-	curAnnotations, err := controller.PreAndExtractAnnotations(curCtx.Annotations)
+	hpa, err := controller.CreateHorizontalPodAutoscaler(curCtx.Name, curCtx.Namespace, curCtx.UID, appsAPIVersion, curCtx.Kind, curCtx.Annotations)
 	if err != nil {
 		utilruntime.HandleError(err)
 		return
 	}
-	hpa := controller.CreateHorizontalPodAutoscaler(curCtx.Name, curCtx.Namespace, curCtx.UID, appsAPIVersion, curCtx.Kind, curAnnotations)
+
 	key, err := controller.KeyFunc(hpa)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", hpa, err))
