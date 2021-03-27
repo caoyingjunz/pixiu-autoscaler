@@ -190,6 +190,9 @@ func parseMetrics(annotations map[string]string) ([]autoscalingv2.MetricSpec, er
 	metrics := make([]autoscalingv2.MetricSpec, 0)
 
 	for metricName, metricValue := range annotations {
+		if !strings.Contains(metricName, "."+KubezRootPrefix) {
+			continue
+		}
 		metricNameSlice := strings.Split(metricName, KubezSeparator)
 		if len(metricNameSlice) < 2 {
 			continue
