@@ -201,3 +201,13 @@ func IsOwnerReference(uid types.UID, ownerReferences []metav1.OwnerReference) bo
 	}
 	return isOwnerRef
 }
+
+func ManagerByKubezAutoscaler(hpa *autoscalingv2.HorizontalPodAutoscaler) bool {
+	for _, managedField := range hpa.ManagedFields {
+		if managedField.APIVersion == HorizontalPodAutoscalerAPIVersion &&
+			managedField.Manager == "kubez-autoscaler-controller" {
+			return true
+		}
+	}
+	return false
+}

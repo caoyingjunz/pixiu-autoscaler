@@ -450,6 +450,9 @@ func (ac *AutoscalerController) updateHPA(old, cur interface{}) {
 		// Two different versions of the same HPA will always have different ResourceVersions.
 		return
 	}
+	if !controller.ManagerByKubezAutoscaler(oldH) {
+		return
+	}
 	klog.V(0).Infof("Updating HPA %s", oldH.Name)
 
 	key, err := controller.KeyFunc(curH)
@@ -465,6 +468,9 @@ func (ac *AutoscalerController) updateHPA(old, cur interface{}) {
 
 func (ac *AutoscalerController) deleteHPA(obj interface{}) {
 	h := obj.(*autoscalingv2.HorizontalPodAutoscaler)
+	if !controller.ManagerByKubezAutoscaler(h) {
+		return
+	}
 	klog.V(0).Infof("Deleting HPA %s/%s", h.Namespace, h.Name)
 
 	key, err := controller.KeyFunc(h)
