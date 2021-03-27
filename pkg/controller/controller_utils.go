@@ -17,6 +17,9 @@ limitations under the License.
 package controller
 
 import (
+	"fmt"
+	"strconv"
+
 	apps "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2beta2"
 	v1 "k8s.io/api/core/v1"
@@ -125,7 +128,25 @@ func CreateHorizontalPodAutoscaler(
 	uid types.UID,
 	apiVersion string,
 	kind string,
-	annotations map[string]int32) *autoscalingv2.HorizontalPodAutoscaler {
+	annotations map[string]string) (*autoscalingv2.HorizontalPodAutoscaler, error) {
+
+	minReplicas, err := ExtractReplicas(annotations, MinReplicas)
+	if err != nil {
+		klog.Errorf("Extract MinReplicas from annotations failed: %v", err)
+		return nil, err
+	}
+	maxReplicas, err := ExtractReplicas(annotations, MaxReplicas)
+	if err != nil {
+		klog.Errorf("Extract maxReplicas from annotations failed: %v", err)
+		return nil, err
+	}
+	metrics, err := parseMetrics(annotations)
+	if err != nil {
+		klog.Errorf("Parse metrics from annotations failed: %v", err)
+		return nil, fmt.Errorf("Parse metrics from annotations failed: %v", err)
+	}
+	klog.Infof("Parse %d metrics from annotations for %s/%s", len(metrics), namespace, name)
+
 	controller := true
 	blockOwnerDeletion := true
 	ownerReference := metav1.OwnerReference{
@@ -150,24 +171,30 @@ func CreateHorizontalPodAutoscaler(
 			},
 		},
 		Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
-			MinReplicas: utilpointer.Int32Ptr(annotations[MinReplicas]),
-			MaxReplicas: annotations[MaxReplicas],
+			MinReplicas: utilpointer.Int32Ptr(minReplicas),
+			MaxReplicas: maxReplicas,
 			ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
 				APIVersion: apiVersion,
 				Kind:       kind,
 				Name:       name,
 			},
-			Metrics: parseMetrics(annotations),
+			Metrics: metrics,
 		},
 	}
 
-	return hpa
+	return hpa, nil
 }
 
-func parseMetrics(annotations map[string]int32) []autoscalingv2.MetricSpec {
+func parseMetrics(annotations map[string]string) ([]autoscalingv2.MetricSpec, error) {
 	metrics := make([]autoscalingv2.MetricSpec, 0)
 
-	kubezMetricType := annotations[KubezMetricType]
+	for _, annotation := range annotations {
+		switch cpuAverageUtilization {
+
+		}
+
+	}
+
 	switch kubezMetricType {
 	case kubezCpuPrefix:
 		// CPU metric
@@ -177,7 +204,7 @@ func parseMetrics(annotations map[string]int32) []autoscalingv2.MetricSpec {
 				Name: v1.ResourceCPU,
 				Target: autoscalingv2.MetricTarget{
 					Type:               autoscalingv2.UtilizationMetricType,
-					AverageUtilization: utilpointer.Int32Ptr(annotations[AverageUtilization]),
+					AverageUtilization: utilpointer.Int32Ptr(annotations[TargetAverageUtilization]),
 				},
 			},
 		}
@@ -188,7 +215,11 @@ func parseMetrics(annotations map[string]int32) []autoscalingv2.MetricSpec {
 		// TODO
 	}
 
-	return metrics
+	if len(metrics) == 0 {
+		return nil, fmt.Errorf("Could't parse metrics, the numbers is zero")
+	}
+
+	return metrics, nil
 }
 
 func IsOwnerReference(uid types.UID, ownerReferences []metav1.OwnerReference) bool {
