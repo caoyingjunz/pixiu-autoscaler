@@ -177,7 +177,7 @@ func parseMetrics(annotations map[string]int32) []autoscalingv2.MetricSpec {
 				Name: v1.ResourceCPU,
 				Target: autoscalingv2.MetricTarget{
 					Type:               autoscalingv2.UtilizationMetricType,
-					AverageUtilization: utilpointer.Int32Ptr(annotations[AverageUtilization]),
+					AverageUtilization: utilpointer.Int32Ptr(annotations[TargetAverageUtilization]),
 				},
 			},
 		}
