@@ -39,7 +39,6 @@ const (
 )
 
 // Options has all the params needed to run a Autoscaler
-// TODO: for new, the params is just LeaderElection
 type Options struct {
 	ComponentConfig config.KubezConfiguration
 
@@ -67,6 +66,10 @@ var (
 	resourceLock      string
 	resourceName      string
 	resourceNamespace string
+
+	// pprof vars
+	startPprof bool
+	pprofPort  string
 )
 
 const (
@@ -77,10 +80,13 @@ const (
 	ResourceLock      = "endpointsleases"
 	ResourceName      = "kubez-autoscaler-manager"
 	ResourceNamespace = "kube-system"
+
+	PPort = "6060"
 )
 
 // BindFlags binds the KubezConfiguration struct fields
 func (o *Options) BindFlags(cmd *cobra.Command) {
+	// LeaderElection configuration
 	cmd.Flags().BoolVarP(&leaderElect, "leader-elect", "l", true, ""+
 		"Start a leader election client and gain leadership before "+
 		"executing the main loop. Enable this when running replicated "+
@@ -107,6 +113,14 @@ func (o *Options) BindFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&resourceNamespace, "leader-elect-resource-namespace", "", ResourceNamespace, ""+
 		"The namespace of resource object that is used for locking during "+
 		"leader election.")
+
+	// Log configuration
+	// TODO
+
+	// ppof configuration
+	cmd.Flags().BoolVarP(&startPprof, "start-pprof", "", true, ""+
+		"Start pprof and gain leadership before executing the main loop")
+	cmd.Flags().StringVarP(&pprofPort, "pprof-port", "", PPort, "The port of pprof used")
 }
 
 func createRecorder(kubeClient clientset.Interface, userAgent string) record.EventRecorder {
@@ -144,9 +158,15 @@ func (o *Options) Config() (*config.KubezConfiguration, error) {
 		},
 	}
 
+	pp := config.KubezPprof{
+		Start: startPprof,
+		Port:  pprofPort,
+	}
+
 	return &config.KubezConfiguration{
 		LeaderClient:   client,
 		EventRecorder:  eventRecorder,
 		LeaderElection: le,
+		KubezPprof:     pp,
 	}, nil
 }

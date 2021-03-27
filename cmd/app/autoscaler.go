@@ -20,7 +20,11 @@ package app
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
+
+	// import pprof for performance diagnosed
+	_ "net/http/pprof"
 
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/util/uuid"
@@ -78,6 +82,13 @@ the core control loops shipped with advanced HPA.`,
 
 // Run runs the kubez-autoscaler process. This should never exit.
 func Run(c *config.KubezConfiguration) error {
+	go func(c *config.KubezConfiguration) {
+		if !c.KubezPprof.Start {
+			return
+		}
+		klog.Fatalf("pprof starting failed: %v", http.ListenAndServe(":"+c.KubezPprof.Port, nil))
+	}(c)
+
 	stopCh := make(chan struct{})
 	defer close(stopCh)
 

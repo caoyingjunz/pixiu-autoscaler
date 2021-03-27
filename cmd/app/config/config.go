@@ -50,6 +50,16 @@ type KubezConfiguration struct {
 
 	// event sink
 	EventRecorder record.EventRecorder
+
+	// Kubez pprof
+	KubezPprof KubezPprof
+}
+
+type KubezPprof struct {
+	// Whether the ppof is started for main process
+	Start bool
+	// The port used for pprof
+	Port string
 }
 
 // Build the kubeconfig from inClusterConfig, falling back to default config if failed.
