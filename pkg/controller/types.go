@@ -30,13 +30,20 @@ const (
 	kubezMemoryPrefix     int32 = 2
 	kubezPrometheusPrefix int32 = 3
 
-	MinReplicas        string = "hpa.caoyingjunz.io/minReplicas"
-	MaxReplicas        string = "hpa.caoyingjunz.io/maxReplicas"
-	AverageUtilization string = "hpa.caoyingjunz.io/AverageUtilization"
+	MinReplicas              string = "hpa.caoyingjunz.io/minReplicas"
+	MaxReplicas              string = "hpa.caoyingjunz.io/maxReplicas"
+	TargetAverageUtilization string = "hpa.caoyingjunz.io/targetAverageUtilization"
+	TargetAverageValue       string = "hpa.caoyingjunz.io/targetAverageValue"
 
-	cpuAverageUtilization       = "cpu." + AverageUtilization
-	memoryAverageUtilization    = "memory." + AverageUtilization
-	prometheuAverageUtilization = "prometheu." + AverageUtilization
+	cpuAverageUtilization       = "cpu." + TargetAverageUtilization
+	memoryAverageUtilization    = "memory." + TargetAverageUtilization
+	prometheuAverageUtilization = "prometheu." + TargetAverageUtilization
+
+	// CPU, in cores. (500m = .5 cores)
+	// Memory, in bytes. (500Gi = 500GiB = 500 * 1024 * 1024 * 1024)
+	cpuAverageValue       = "cpu." + TargetAverageValue
+	memoryAverageValue    = "memory." + TargetAverageValue
+	prometheuAverageValue = "prometheu." + TargetAverageValue
 )
 
 // To ensure whether we need to maintain the HPA
@@ -44,9 +51,14 @@ func IsNeedForHPAs(annotations map[string]string) bool {
 	if annotations == nil || len(annotations) == 0 {
 		return false
 	}
-
+	// TODO: regexp is better
 	for aKey := range annotations {
-		if aKey == cpuAverageUtilization || aKey == memoryAverageUtilization || aKey == prometheuAverageUtilization {
+		if aKey == cpuAverageUtilization ||
+			aKey == memoryAverageUtilization ||
+			aKey == prometheuAverageUtilization ||
+			aKey == cpuAverageValue ||
+			aKey == memoryAverageValue ||
+			aKey == prometheuAverageValue {
 			return true
 		}
 	}
@@ -61,15 +73,15 @@ func PreAndExtractAnnotations(annotations map[string]string) (map[string]int32, 
 	// Extract HPA items form annotations
 	var kubezMetricType int32
 	for aKey := range annotations {
-		if aKey == cpuAverageUtilization {
+		if aKey == cpuAverageUtilization || aKey == cpuAverageValue {
 			kubezMetricType = kubezCpuPrefix
 			break
 		}
-		if aKey == memoryAverageUtilization {
+		if aKey == memoryAverageUtilization || aKey == memoryAverageValue {
 			kubezMetricType = kubezMemoryPrefix
 			break
 		}
-		if aKey == prometheuAverageUtilization {
+		if aKey == prometheuAverageUtilization || aKey == prometheuAverageValue {
 			kubezMetricType = kubezPrometheusPrefix
 			break
 		}
@@ -85,7 +97,7 @@ func PreAndExtractAnnotations(annotations map[string]string) (map[string]int32, 
 		if averageUtilizationInt64 <= 0 || averageUtilizationInt64 > 100 {
 			return nil, fmt.Errorf("averageUtilization should be range 1 between 100")
 		}
-		hpaAnnotations[AverageUtilization] = int32(averageUtilizationInt64)
+		hpaAnnotations[TargetAverageUtilization] = int32(averageUtilizationInt64)
 	}
 
 	// Max Replicas
