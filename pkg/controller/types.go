@@ -30,13 +30,18 @@ const (
 	kubezMemoryPrefix     int32 = 2
 	kubezPrometheusPrefix int32 = 3
 
-	MinReplicas        string = "hpa.caoyingjunz.io/minReplicas"
-	MaxReplicas        string = "hpa.caoyingjunz.io/maxReplicas"
-	AverageUtilization string = "hpa.caoyingjunz.io/AverageUtilization"
+	MinReplicas              string = "hpa.caoyingjunz.io/minReplicas"
+	MaxReplicas              string = "hpa.caoyingjunz.io/maxReplicas"
+	targetAverageUtilization string = "hpa.caoyingjunz.io/targetAverageUtilization"
+	targetAverageValue       string = "hpa.caoyingjunz.io/targetAverageValue"
 
-	cpuAverageUtilization       = "cpu." + AverageUtilization
-	memoryAverageUtilization    = "memory." + AverageUtilization
-	prometheuAverageUtilization = "prometheu." + AverageUtilization
+	cpuAverageUtilization       = "cpu." + targetAverageUtilization
+	memoryAverageUtilization    = "memory." + targetAverageUtilization
+	prometheuAverageUtilization = "prometheu." + targetAverageUtilization
+
+	cpuAverageValue       = "cpu." + targetAverageValue
+	memoryAverageValue    = "memory." + targetAverageValue
+	prometheuAverageValue = "prometheu." + targetAverageValue
 )
 
 // To ensure whether we need to maintain the HPA
@@ -85,7 +90,7 @@ func PreAndExtractAnnotations(annotations map[string]string) (map[string]int32, 
 		if averageUtilizationInt64 <= 0 || averageUtilizationInt64 > 100 {
 			return nil, fmt.Errorf("averageUtilization should be range 1 between 100")
 		}
-		hpaAnnotations[AverageUtilization] = int32(averageUtilizationInt64)
+		hpaAnnotations[targetAverageUtilization] = int32(averageUtilizationInt64)
 	}
 
 	// Max Replicas
