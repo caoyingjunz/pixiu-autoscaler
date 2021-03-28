@@ -19,6 +19,8 @@ package controller
 import (
 	"fmt"
 	"strconv"
+
+	"github.com/caoyingjunz/kubez-autoscaler/pkg/kubezstore"
 )
 
 const (
@@ -48,17 +50,27 @@ const (
 	prometheusAverageValue = "prometheus." + KubezRootPrefix + KubezSeparator + targetAverageValue
 )
 
+var kset kubezstore.SafeSetInterface
+
+func init() {
+	// Init SafeSet which contains the HPA Average Utilization / Value
+	kset = kubezstore.
+		NewSafeSet(
+			cpuAverageUtilization,
+			memoryAverageUtilization,
+			cpuAverageValue,
+			memoryAverageValue,
+		)
+}
+
 // To ensure whether we need to maintain the HPA
 func IsNeedForHPAs(annotations map[string]string) bool {
 	if annotations == nil || len(annotations) == 0 {
 		return false
 	}
-	// TODO: regexp is better
+
 	for aKey := range annotations {
-		if aKey == cpuAverageUtilization ||
-			aKey == memoryAverageUtilization ||
-			aKey == cpuAverageValue ||
-			aKey == memoryAverageValue {
+		if kset.Has(aKey) {
 			return true
 		}
 	}

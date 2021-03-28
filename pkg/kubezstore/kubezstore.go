@@ -23,9 +23,13 @@ import (
 )
 
 type SafeStoreInterface interface {
+	// Adds a hpa into the store.
 	Add(key string, obj *autoscalingv2.HorizontalPodAutoscaler)
+	// Update a hpa into the store if exists, or Add it.
 	Update(key string, obj *autoscalingv2.HorizontalPodAutoscaler)
+	// Delete the hpa from store by key
 	Delete(key string)
+	// Get the hpa from store by gived key
 	Get(key string) (*autoscalingv2.HorizontalPodAutoscaler, bool)
 }
 
@@ -61,8 +65,58 @@ func (s *SafeStore) Delete(key string) {
 	}
 }
 
+// NewSafeStore creates and returns a reference to an empty store. Operations
+// on the resulting set are thread safe.
 func NewSafeStore() SafeStoreInterface {
 	return &SafeStore{
 		items: map[string]*autoscalingv2.HorizontalPodAutoscaler{},
 	}
+}
+
+// Empty is public since it is used by some internal API objects for conversions between external
+// string arrays and internal sets, and conversion logic requires public types today.
+type Empty struct{}
+
+// SafeSet is the primary interface. It
+// represents an unordered set of data and a large number of
+// operations that can be applied to that set.
+type SafeSetInterface interface {
+	// Adds an element to the set.
+	Add(i interface{})
+
+	// Returns whether the given item
+	// is in the set.
+	Has(i interface{}) bool
+}
+
+type SafeSet struct {
+	lock sync.RWMutex
+	set  map[interface{}]Empty
+}
+
+func (s *SafeSet) Add(i interface{}) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.set[i] = Empty{}
+}
+
+// Has returns true if and only if item is contained in the set.
+func (s *SafeSet) Has(i interface{}) bool {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	_, containd := s.set[i]
+	return containd
+}
+
+// NewSafeSet creates and returns a reference to an empty set. Operations
+// on the resulting set are thread safe.
+func NewSafeSet(s ...interface{}) SafeSetInterface {
+	ss := &SafeSet{
+		set: map[interface{}]Empty{},
+	}
+	for _, item := range s {
+		ss.Add(item)
+	}
+
+	return ss
 }
