@@ -22,6 +22,8 @@ import (
 )
 
 const (
+	KubezManager    string = "kubez-autoscaler-controller"
+	KubezMain       string = "main"
 	KubezRootPrefix string = "hpa.caoyingjunz.io"
 	KubezSeparator  string = "/"
 

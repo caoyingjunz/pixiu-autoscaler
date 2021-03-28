@@ -34,8 +34,8 @@ import (
 )
 
 const (
-	HorizontalPodAutoscaler           string = "HorizontalPodAutoscaler"
-	HorizontalPodAutoscalerAPIVersion string = "autoscaling/v2beta2"
+	HorizontalPodAutoscaler string = "HorizontalPodAutoscaler"
+	AutoscalingAPIVersion   string = "autoscaling/v2beta2"
 )
 
 var (
@@ -150,6 +150,7 @@ func CreateHorizontalPodAutoscaler(
 
 	controller := true
 	blockOwnerDeletion := true
+	// Inject ownerReference label
 	ownerReference := metav1.OwnerReference{
 		APIVersion:         apiVersion,
 		Kind:               kind,
@@ -162,7 +163,7 @@ func CreateHorizontalPodAutoscaler(
 	hpa := &autoscalingv2.HorizontalPodAutoscaler{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       HorizontalPodAutoscaler,
-			APIVersion: HorizontalPodAutoscalerAPIVersion,
+			APIVersion: AutoscalingAPIVersion,
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -276,10 +277,12 @@ func IsOwnerReference(uid types.UID, ownerReferences []metav1.OwnerReference) bo
 	return isOwnerRef
 }
 
-func ManagerByKubezAutoscaler(hpa *autoscalingv2.HorizontalPodAutoscaler) bool {
+func ManagerByKubezController(hpa *autoscalingv2.HorizontalPodAutoscaler) bool {
 	for _, managedField := range hpa.ManagedFields {
-		if managedField.APIVersion == HorizontalPodAutoscalerAPIVersion &&
-			managedField.Manager == "kubez-autoscaler-controller" {
+		if managedField.APIVersion == AutoscalingAPIVersion &&
+			(managedField.Manager == KubezManager ||
+				// This condition used for local run
+				managedField.Manager == KubezMain) {
 			return true
 		}
 	}

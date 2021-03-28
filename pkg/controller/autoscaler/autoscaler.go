@@ -434,7 +434,13 @@ func (ac *AutoscalerController) HandlerDeleteEvents(obj interface{}) {
 	ac.enqueueAutoscaler(hpa)
 }
 
-func (ac *AutoscalerController) addHPA(obj interface{}) {}
+func (ac *AutoscalerController) addHPA(obj interface{}) {
+	h := obj.(*autoscalingv2.HorizontalPodAutoscaler)
+	if !controller.ManagerByKubezController(h) {
+		return
+	}
+	klog.V(0).Infof("Adding HPA(manager by kubez) %s/%s", h.Namespace, h.Name)
+}
 
 // updateHPA figures out what HPA(s) is updated and wake them up.
 // old and cur must be *autoscalingv2.HorizontalPodAutoscaler types.
@@ -446,10 +452,10 @@ func (ac *AutoscalerController) updateHPA(old, cur interface{}) {
 		// Two different versions of the same HPA will always have different ResourceVersions.
 		return
 	}
-	//if !controller.ManagerByKubezAutoscaler(oldH) {
-	//	return
-	//}
-	klog.V(0).Infof("Updating HPA %s", oldH.Name)
+	if !controller.ManagerByKubezController(oldH) {
+		return
+	}
+	klog.V(0).Infof("Updating HPA %s/%s", oldH.Namespace, oldH.Name)
 
 	key, err := controller.KeyFunc(curH)
 	if err != nil {
@@ -464,9 +470,9 @@ func (ac *AutoscalerController) updateHPA(old, cur interface{}) {
 
 func (ac *AutoscalerController) deleteHPA(obj interface{}) {
 	h := obj.(*autoscalingv2.HorizontalPodAutoscaler)
-	//if !controller.ManagerByKubezAutoscaler(h) {
-	//	return
-	//}
+	if !controller.ManagerByKubezController(h) {
+		return
+	}
 	klog.V(0).Infof("Deleting HPA %s/%s", h.Namespace, h.Name)
 
 	key, err := controller.KeyFunc(h)
