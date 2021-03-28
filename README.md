@@ -24,8 +24,11 @@ rules:
       - horizontalpodautoscalers
       - deployments
       - statefulsets
+      - endpoints
+      - leases
     verbs:
       - get
+      - list
       - watch
       - create
       - delete
