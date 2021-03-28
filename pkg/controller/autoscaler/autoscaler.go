@@ -525,6 +525,7 @@ func (ac *AutoscalerController) handleErr(err error, key interface{}) {
 	ac.queue.Forget(key)
 }
 
+// This functions just wrap HandlerEvents for improve the readability of codes
 func (ac *AutoscalerController) addDeployment(obj interface{}) {
 	ac.HandlerAddEvents(obj)
 }
