@@ -295,7 +295,8 @@ func (ac *AutoscalerController) GetNewestHPAFromResource(
 		return nil, nil
 	}
 
-	return controller.CreateHorizontalPodAutoscaler(hpa.Name, hpa.Namespace, uid, appsAPIVersion, kind, annotations)
+	return controller.CreateHorizontalPodAutoscaler(
+		hpa.Name, hpa.Namespace, uid, appsAPIVersion, kind, annotations)
 }
 
 // To insert annotation to distinguish the event type
@@ -326,7 +327,8 @@ func (ac *AutoscalerController) HandlerAddEvents(obj interface{}) {
 		return
 	}
 
-	hpa, err := controller.CreateHorizontalPodAutoscaler(ascCtx.Name, ascCtx.Namespace, ascCtx.UID, appsAPIVersion, ascCtx.Kind, ascCtx.Annotations)
+	hpa, err := controller.CreateHorizontalPodAutoscaler(
+		ascCtx.Name, ascCtx.Namespace, ascCtx.UID, appsAPIVersion, ascCtx.Kind, ascCtx.Annotations)
 	if err != nil {
 		utilruntime.HandleError(err)
 		return
@@ -381,7 +383,8 @@ func (ac *AutoscalerController) HandlerUpdateEvents(old, cur interface{}) {
 	}
 
 	// Add or Update HPAs
-	hpa, err := controller.CreateHorizontalPodAutoscaler(curCtx.Name, curCtx.Namespace, curCtx.UID, appsAPIVersion, curCtx.Kind, curCtx.Annotations)
+	hpa, err := controller.CreateHorizontalPodAutoscaler(
+		curCtx.Name, curCtx.Namespace, curCtx.UID, appsAPIVersion, curCtx.Kind, curCtx.Annotations)
 	if err != nil {
 		utilruntime.HandleError(err)
 		return
