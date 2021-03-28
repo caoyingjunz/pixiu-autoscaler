@@ -2,6 +2,10 @@
 
 `kubez-autoscaler` 通过为 `deployment` / `statefulset` 添加 `annotations` 的方式，自动维护对应 `HorizontalPodAutoscaler` 的生命周期.
 
+### Prerequisites
+
+在 `kubernetes` 集群中， 需要先完成 `Metrics Server` 组件的安装，请参考 [Metrics Server](https://github.com/kubernetes-incubator/metrics-server)
+
 ### Installing
 
 `kubez-autoscaler` 控制器的安装非常简单，通过 `kubectl` 执行 `apply` 如下文件即可完成安装，真正做到猩猩都能使用.
