@@ -457,6 +457,12 @@ func (ac *AutoscalerController) addHPA(obj interface{}) {
 	if !controller.ManagerByKubezController(h) {
 		return
 	}
+
+	oldH, err := ac.hpaLister.HorizontalPodAutoscalers(h.Namespace).Get(h.Name)
+	if err != nil && !errors.IsNotFound(err) {
+		klog.Infof("====")
+	}
+
 	klog.V(0).Infof("Adding HPA(manager by kubez) %s/%s", h.Namespace, h.Name)
 }
 
