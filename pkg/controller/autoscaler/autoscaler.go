@@ -457,6 +457,17 @@ func (ac *AutoscalerController) addHPA(obj interface{}) {
 	if !controller.ManagerByKubezController(h) {
 		return
 	}
+
+	oldH, err := ac.hpaLister.HorizontalPodAutoscalers(h.Namespace).Get(h.Name)
+	if err != nil && !errors.IsNotFound(err) {
+		klog.Warningf("Failed to get %s/%s for %s", h.Namespace, h.Name, h.Spec.ScaleTargetRef.Kind)
+	}
+	if h.ResourceVersion == oldH.ResourceVersion {
+		// Periodic resync will send update events for all known HPAs.
+		// Two different versions of the same HPA will always have different ResourceVersions.
+		return
+	}
+
 	klog.V(0).Infof("Adding HPA(manager by kubez) %s/%s", h.Namespace, h.Name)
 }
 
