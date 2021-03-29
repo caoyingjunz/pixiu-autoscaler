@@ -125,7 +125,7 @@ func NewAutoscalerController(
 		DeleteFunc: ac.deleteDeployment,
 	})
 
-	//Statefulset
+	// StatefulSet
 	sInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ac.addStatefulset,
 		UpdateFunc: ac.updateStatefulset,
@@ -549,27 +549,34 @@ func (ac *AutoscalerController) handleErr(err error, key interface{}) {
 	ac.queue.Forget(key)
 }
 
-// This functions just wrap HandlerEvents for improve the readability of codes
+// This functions just wrap Handler Deployment Events for improve the readability of codes
 func (ac *AutoscalerController) addDeployment(obj interface{}) {
+	klog.V(2).Infof("Handering add Deployment event")
 	ac.HandlerAddEvents(obj)
 }
 
 func (ac *AutoscalerController) updateDeployment(old, cur interface{}) {
+	klog.V(2).Infof("Handering update Deployment event")
 	ac.HandlerUpdateEvents(old, cur)
 }
 
 func (ac *AutoscalerController) deleteDeployment(obj interface{}) {
+	klog.V(2).Infof("Handering delete Deployment event")
 	ac.HandlerDeleteEvents(obj)
 }
 
+// This functions just wrap Handler StatefulSet Events for improve the readability of codes
 func (ac *AutoscalerController) addStatefulset(obj interface{}) {
+	klog.V(2).Infof("Handering add StatefulSet event")
 	ac.HandlerAddEvents(obj)
 }
 
 func (ac *AutoscalerController) updateStatefulset(old, cur interface{}) {
+	klog.V(2).Infof("Handering update StatefulSet event")
 	ac.HandlerUpdateEvents(old, cur)
 }
 
 func (ac *AutoscalerController) deleteStatefulset(obj interface{}) {
+	klog.V(2).Infof("Handering delete StatefulSet event")
 	ac.HandlerDeleteEvents(obj)
 }
