@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sync"
 	"time"
 
 	autoscalingv2 "k8s.io/api/autoscaling/v2beta2"
@@ -55,7 +56,7 @@ const (
 	RecoverDeleteEvent string = "RecoverDelete"
 	RecoverUpdateEvent string = "RecoverUpdate"
 
-	kubezEvent string = "kubezEvent"
+	markInnerEvent string = "markInnerEvent"
 )
 
 const (
@@ -69,6 +70,7 @@ const (
 // AutoscalerController is responsible for synchronizing HPA objects stored
 // in the system.
 type AutoscalerController struct {
+	lock          sync.RWMutex
 	client        clientset.Interface
 	eventRecorder record.EventRecorder
 
@@ -319,21 +321,25 @@ func (ac *AutoscalerController) GetNewestHPAFromResource(
 
 // To insert annotation to distinguish the event type
 func (ac *AutoscalerController) InsertKubezAnnotation(hpa *autoscalingv2.HorizontalPodAutoscaler, event string) {
+	ac.lock.Lock()
+	defer ac.lock.Unlock()
 	if hpa.Annotations == nil {
 		hpa.Annotations = map[string]string{
-			kubezEvent: event,
+			markInnerEvent: event,
 		}
 		return
 	}
-	hpa.Annotations[kubezEvent] = event
+	hpa.Annotations[markInnerEvent] = event
 }
 
 // To pop kubez annotation and clean up kubez marker from HPA
 func (ac *AutoscalerController) PopKubezAnnotation(hpa *autoscalingv2.HorizontalPodAutoscaler) string {
-	event, exists := hpa.Annotations[kubezEvent]
+	ac.lock.Lock()
+	defer ac.lock.Unlock()
+	event, exists := hpa.Annotations[markInnerEvent]
 	// This shouldn't happen, because we only insert annotation for hpa
 	if exists {
-		delete(hpa.Annotations, kubezEvent)
+		delete(hpa.Annotations, markInnerEvent)
 	}
 	return event
 }
