@@ -121,6 +121,9 @@ func Run(c *config.KubezConfiguration) error {
 		kubezCtx.InformerFactory.Start(stopCh)
 		kubezCtx.ObjectOrMetadataInformerFactory.Start(stopCh)
 
+		// Heathz Check
+		go StartHealthzServer(c.Healthz.HealthzHost, c.Healthz.HealthzPort)
+
 		// always wait
 		select {}
 	}
