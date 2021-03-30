@@ -6,6 +6,18 @@
 
 在 `kubernetes` 集群中， 需要先完成 `Metrics Server` 组件的安装，请参考 [Metrics Server](https://github.com/kubernetes-incubator/metrics-server)
 
+`kubectl top node/pod` 验证 `Metrics Server` 已成功安装
+
+``` bash
+# kubectl top node
+NAME          CPU(cores)   CPU%   MEMORY(bytes)   MEMORY%
+kubez         333m         16%    1225Mi          65%
+
+# kubectl top pod
+NAME                     CPU(cores)   MEMORY(bytes)
+test1-54cd855b77-q67h6   1m           3Mi
+```
+
 ### Installing
 
 `kubez-autoscaler` 控制器的安装非常简单，通过 `kubectl` 执行 `apply` 如下文件即可完成安装，真正做到猩猩都能使用.
