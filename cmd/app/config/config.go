@@ -53,6 +53,9 @@ type KubezConfiguration struct {
 
 	// Kubez pprof
 	KubezPprof KubezPprof
+
+	// Healthz Configuration
+	Healthz HealthzConfiguration
 }
 
 type KubezPprof struct {
@@ -60,6 +63,11 @@ type KubezPprof struct {
 	Start bool
 	// The port used for pprof
 	Port string
+}
+
+type HealthzConfiguration struct {
+	HealthzHost string
+	HealthzPort string
 }
 
 // Build the kubeconfig from inClusterConfig, falling back to default config if failed.
