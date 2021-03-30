@@ -70,6 +70,10 @@ var (
 	// pprof vars
 	startPprof bool
 	pprofPort  string
+
+	// healthz vars
+	healthzHost string
+	healthzPort string
 )
 
 const (
@@ -81,7 +85,9 @@ const (
 	ResourceName      = "kubez-autoscaler-manager"
 	ResourceNamespace = "kube-system"
 
-	PPort = "6060"
+	HealthzHost = "127.0.0.1"
+	HealthzPort = "10256"
+	PPort       = "6060"
 )
 
 // BindFlags binds the KubezConfiguration struct fields
@@ -120,7 +126,11 @@ func (o *Options) BindFlags(cmd *cobra.Command) {
 	// ppof configuration
 	cmd.Flags().BoolVarP(&startPprof, "start-pprof", "", true, ""+
 		"Start pprof and gain leadership before executing the main loop")
-	cmd.Flags().StringVarP(&pprofPort, "pprof-port", "", PPort, "The port of pprof used")
+	cmd.Flags().StringVarP(&pprofPort, "pprof-port", "", PPort, "The port of pprof to listen on")
+
+	// Healthz configuration
+	cmd.Flags().StringVarP(&healthzHost, "healthz-host", "", HealthzHost, "The host of Healthz")
+	cmd.Flags().StringVarP(&healthzPort, "healthz-port", "", HealthzPort, "The port of Healthz to listen on")
 }
 
 func createRecorder(kubeClient clientset.Interface, userAgent string) record.EventRecorder {
@@ -168,5 +178,9 @@ func (o *Options) Config() (*config.KubezConfiguration, error) {
 		EventRecorder:  eventRecorder,
 		LeaderElection: le,
 		KubezPprof:     pp,
+		Healthz: config.HealthzConfiguration{
+			HealthzHost: healthzHost,
+			HealthzPort: healthzPort,
+		},
 	}, nil
 }
