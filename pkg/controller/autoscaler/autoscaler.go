@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sync"
 	"time"
 
 	autoscalingv2 "k8s.io/api/autoscaling/v2beta2"
@@ -55,7 +56,7 @@ const (
 	RecoverDeleteEvent string = "RecoverDelete"
 	RecoverUpdateEvent string = "RecoverUpdate"
 
-	kubezEvent string = "kubezEvent"
+	markInnerEvent string = "markInnerEvent"
 )
 
 const (
@@ -69,6 +70,7 @@ const (
 // AutoscalerController is responsible for synchronizing HPA objects stored
 // in the system.
 type AutoscalerController struct {
+	lock          sync.RWMutex
 	client        clientset.Interface
 	eventRecorder record.EventRecorder
 
@@ -194,8 +196,8 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 	kind := hpa.Spec.ScaleTargetRef.Kind
 
 	var err error
-	event := ac.PopKubezAnnotation(hpa)
-	klog.V(0).Infof("Handlering HPA: %s/%s, event: %s", hpa.Namespace, hpa.Name, event)
+	event := ac.popInnerEvent(hpa)
+	klog.V(0).Infof("Handlering %s event for %s/%s from %s", event, hpa.Namespace, hpa.Name, kind)
 
 	switch event {
 	case AddEvent:
@@ -318,22 +320,26 @@ func (ac *AutoscalerController) GetNewestHPAFromResource(
 }
 
 // To insert annotation to distinguish the event type
-func (ac *AutoscalerController) InsertKubezAnnotation(hpa *autoscalingv2.HorizontalPodAutoscaler, event string) {
+func (ac *AutoscalerController) wrapInnerEvent(hpa *autoscalingv2.HorizontalPodAutoscaler, event string) {
+	ac.lock.Lock()
+	defer ac.lock.Unlock()
 	if hpa.Annotations == nil {
 		hpa.Annotations = map[string]string{
-			kubezEvent: event,
+			markInnerEvent: event,
 		}
 		return
 	}
-	hpa.Annotations[kubezEvent] = event
+	hpa.Annotations[markInnerEvent] = event
 }
 
 // To pop kubez annotation and clean up kubez marker from HPA
-func (ac *AutoscalerController) PopKubezAnnotation(hpa *autoscalingv2.HorizontalPodAutoscaler) string {
-	event, exists := hpa.Annotations[kubezEvent]
+func (ac *AutoscalerController) popInnerEvent(hpa *autoscalingv2.HorizontalPodAutoscaler) string {
+	ac.lock.Lock()
+	defer ac.lock.Unlock()
+	event, exists := hpa.Annotations[markInnerEvent]
 	// This shouldn't happen, because we only insert annotation for hpa
 	if exists {
-		delete(hpa.Annotations, kubezEvent)
+		delete(hpa.Annotations, markInnerEvent)
 	}
 	return event
 }
@@ -360,7 +366,7 @@ func (ac *AutoscalerController) HandlerAddEvents(obj interface{}) {
 		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", hpa, err))
 		return
 	}
-	ac.InsertKubezAnnotation(hpa, AddEvent)
+	ac.wrapInnerEvent(hpa, AddEvent)
 	ac.store.Update(key, hpa)
 
 	ac.enqueueAutoscaler(hpa)
@@ -393,7 +399,7 @@ func (ac *AutoscalerController) HandlerUpdateEvents(old, cur interface{}) {
 			utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", hpa, err))
 			return
 		}
-		ac.InsertKubezAnnotation(hpa, DeleteEvent)
+		ac.wrapInnerEvent(hpa, DeleteEvent)
 		ac.store.Add(key, hpa)
 
 		ac.enqueueAutoscaler(hpa)
@@ -415,9 +421,9 @@ func (ac *AutoscalerController) HandlerUpdateEvents(old, cur interface{}) {
 	}
 
 	if !oldExists && curExists {
-		ac.InsertKubezAnnotation(hpa, AddEvent)
+		ac.wrapInnerEvent(hpa, AddEvent)
 	} else if oldExists && curExists {
-		ac.InsertKubezAnnotation(hpa, UpdateEvent)
+		ac.wrapInnerEvent(hpa, UpdateEvent)
 	}
 	ac.store.Add(key, hpa)
 
@@ -446,7 +452,7 @@ func (ac *AutoscalerController) HandlerDeleteEvents(obj interface{}) {
 		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", hpa, err))
 		return
 	}
-	ac.InsertKubezAnnotation(hpa, DeleteEvent)
+	ac.wrapInnerEvent(hpa, DeleteEvent)
 	ac.store.Update(key, hpa)
 
 	ac.enqueueAutoscaler(hpa)
@@ -480,7 +486,7 @@ func (ac *AutoscalerController) updateHPA(old, cur interface{}) {
 		return
 	}
 	// To insert annotation to distinguish the event type is Update
-	ac.InsertKubezAnnotation(curH, RecoverUpdateEvent)
+	ac.wrapInnerEvent(curH, RecoverUpdateEvent)
 	ac.store.Update(key, curH)
 
 	ac.enqueueAutoscaler(curH)
@@ -498,7 +504,7 @@ func (ac *AutoscalerController) deleteHPA(obj interface{}) {
 		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", h, err))
 		return
 	}
-	ac.InsertKubezAnnotation(h, RecoverDeleteEvent)
+	ac.wrapInnerEvent(h, RecoverDeleteEvent)
 	ac.store.Update(key, h)
 
 	ac.enqueueAutoscaler(h)
