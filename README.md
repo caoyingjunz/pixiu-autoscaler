@@ -86,6 +86,21 @@ spec:
             - kubez-autoscaler-controller
             - --leader-elect=true
           imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 8
+            httpGet:
+              host: 127.0.0.1
+              path: /healthz
+              port: 10256
+              scheme: HTTPS
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 15
+          resources:
+            requests:
+              cpu: 100m
+              memory: 90Mi
           name: kubez-autoscaler-controller
       serviceAccountName: kubez
 ```
