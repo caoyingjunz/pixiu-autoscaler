@@ -122,9 +122,22 @@ kind: Deployment
 metadata:
   annotations:
     ...
+    # 可选，默认 minReplicas 为 1
     hpa.caoyingjunz.io/minReplicas: "2"  # MINPODS
+    # 必填
     hpa.caoyingjunz.io/maxReplicas: "6"  # MAXPODS
-    cpu.hpa.caoyingjunz.io/targetAverageUtilization: "60"  # TARGETS
+    ...
+    # 支持多种 TARGETS 类型，若开启，至少选择一种，可同时支持多个 TARGETS
+    # CPU, in cores. (500m = .5 cores)
+    # Memory, in bytes. (500Gi = 500GiB = 500 * 1024 * 1024 * 1024)
+
+    # 使用率 examples
+    cpu.hpa.caoyingjunz.io/targetAverageUtilization: "80"
+    memory.hpa.caoyingjunz.io/targetAverageUtilization: "60"
+
+    # 使用值 examples
+    cpu.hpa.caoyingjunz.io/targetAverageValue: 600m
+    memory.hpa.caoyingjunz.io/targetAverageValue: 60Mi
     ...
   name: test1
   namespace: default
@@ -135,6 +148,7 @@ metadata:
 
 通过 `kubectl get hpa test1` 命令，可以看到 `deployment` / `statefulset` 关联的 `HPA` 被自动创建
 ```bash
-NAME    REFERENCE          TARGETS         MINPODS   MAXPODS   REPLICAS   AGE
-test1   Deployment/test1   6% / 60%        1         2         1          5h29m
+NAME    REFERENCE          TARGETS            MINPODS   MAXPODS   REPLICAS   AGE
+test1   Deployment/test1   6% / 60%           1         2         1          5h29m
+test2   Deployment/test2   152%/50%, 0%/60%   2         3         3          34m
 ```
