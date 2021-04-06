@@ -34,7 +34,7 @@ const (
 	targetAverageUtilization string = "targetAverageUtilization"
 	targetAverageValue       string = "targetAverageValue"
 
-	// TODO prometheus is not supported for now.
+	// TODO: prometheus is not supported for now.
 	cpu        string = "cpu"
 	memory     string = "memory"
 	prometheus string = "prometheus"
