@@ -50,18 +50,10 @@ const (
 	prometheusAverageValue = "prometheus." + KubezRootPrefix + KubezSeparator + targetAverageValue
 )
 
-var kset kubezstore.SafeSetInterface
-
-func init() {
+var (
 	// Init SafeSet which contains the HPA Average Utilization / Value
-	kset = kubezstore.
-		NewSafeSet(
-			cpuAverageUtilization,
-			memoryAverageUtilization,
-			cpuAverageValue,
-			memoryAverageValue,
-		)
-}
+	kset = kubezstore.NewSafeSet(cpuAverageUtilization, memoryAverageUtilization, cpuAverageValue, memoryAverageValue)
+)
 
 // To ensure whether we need to maintain the HPA
 func IsNeedForHPAs(annotations map[string]string) bool {
