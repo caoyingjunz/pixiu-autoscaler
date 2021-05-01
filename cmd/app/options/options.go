@@ -27,7 +27,7 @@ import (
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/record"
 	componentbaseconfig "k8s.io/component-base/config"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"github.com/caoyingjunz/kubez-autoscaler/cmd/app/config"
 	"github.com/caoyingjunz/kubez-autoscaler/pkg/controller"
@@ -70,6 +70,9 @@ var (
 	// pprof vars
 	startPprof bool
 	pprofPort  string
+
+	// log parameter
+	verbosity string
 
 	// healthz vars
 	healthzHost string
@@ -121,7 +124,7 @@ func (o *Options) BindFlags(cmd *cobra.Command) {
 		"leader election.")
 
 	// Log configuration
-	// TODO
+	cmd.Flags().StringVarP(&verbosity, "verbosity", "v", "0", "number for the log level verbosity")
 
 	// ppof configuration
 	cmd.Flags().BoolVarP(&startPprof, "start-pprof", "", true, ""+

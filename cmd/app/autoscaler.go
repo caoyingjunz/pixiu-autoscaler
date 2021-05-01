@@ -30,7 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"github.com/caoyingjunz/kubez-autoscaler/cmd/app/config"
 	"github.com/caoyingjunz/kubez-autoscaler/cmd/app/options"

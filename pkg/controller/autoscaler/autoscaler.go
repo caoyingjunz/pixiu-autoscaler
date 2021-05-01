@@ -40,7 +40,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/component-base/metrics/prometheus/ratelimiter"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"github.com/caoyingjunz/kubez-autoscaler/pkg/controller"
 	"github.com/caoyingjunz/kubez-autoscaler/pkg/kubezstore"

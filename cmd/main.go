@@ -17,11 +17,12 @@ limitations under the License.
 package main
 
 import (
+	"flag"
 	"math/rand"
 	"os"
 	"time"
 
-	"k8s.io/component-base/logs"
+	"k8s.io/klog/v2"
 
 	"github.com/caoyingjunz/kubez-autoscaler/cmd/app"
 )
@@ -29,10 +30,10 @@ import (
 func main() {
 	rand.Seed(time.Now().UnixNano())
 
-	command := app.NewAutoscalerCommand()
+	klog.InitFlags(nil)
+	flag.Parse()
 
-	logs.InitLogs()
-	defer logs.FlushLogs()
+	command := app.NewAutoscalerCommand()
 
 	if err := command.Execute(); err != nil {
 		os.Exit(1)
