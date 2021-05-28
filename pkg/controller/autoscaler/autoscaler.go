@@ -22,6 +22,7 @@ import (
 	"reflect"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2beta2"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -558,7 +559,11 @@ func (ac *AutoscalerController) addDeployment(obj interface{}) {
 
 func (ac *AutoscalerController) updateDeployment(old, cur interface{}) {
 	klog.V(2).Infof("Handering update Deployment event")
-	ac.HandlerUpdateEvents(old, cur)
+	// Periodic resync will send update events for all known Deployments.
+	// Two different versions of the same Deployment will always have different RVs.
+	if old.(*appsv1.Deployment).ResourceVersion != cur.(*appsv1.Deployment).ResourceVersion {
+		ac.HandlerUpdateEvents(old, cur)
+	}
 }
 
 func (ac *AutoscalerController) deleteDeployment(obj interface{}) {
@@ -574,7 +579,11 @@ func (ac *AutoscalerController) addStatefulset(obj interface{}) {
 
 func (ac *AutoscalerController) updateStatefulset(old, cur interface{}) {
 	klog.V(2).Infof("Handering update StatefulSet event")
-	ac.HandlerUpdateEvents(old, cur)
+	// Periodic resync will send update events for all known Deployments.
+	// Two different versions of the same Deployment will always have different RVs.
+	if old.(*appsv1.StatefulSet).ResourceVersion != cur.(*appsv1.StatefulSet).ResourceVersion {
+		ac.HandlerUpdateEvents(old, cur)
+	}
 }
 
 func (ac *AutoscalerController) deleteStatefulset(obj interface{}) {
