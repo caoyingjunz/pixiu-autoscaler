@@ -21,3 +21,6 @@ testbin/*
 .idea
 *.swp
 *.swo
+
+# binary
+dist
