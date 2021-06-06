@@ -6,15 +6,17 @@ TAG ?= latest
 OS ?= linux
 ARCH ?= amd64
 IMAGE ?= $(ORG)/kubez-autoscaler-controller:$(TAG)
+GOPROXY ?=
 
 .PHONY: build image push-image
 
 build:
-	CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) go build -o $(TARGET_DIR)/kubez-autoscaler-controller ./cmd
+	CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) GOPROXY=$(GOPROXY) go build -o $(TARGET_DIR)/kubez-autoscaler-controller ./cmd
 
 image:
 ifeq ($(BUILDX), false)
 	docker build \
+		--build-arg GOPROXY=$(GOPROXY) \
 		--force-rm \
 		--no-cache \
 		-t $(IMAGE) .
