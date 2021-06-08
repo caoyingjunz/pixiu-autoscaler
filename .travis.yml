@@ -1,0 +1,8 @@
+services:
+  - docker
+script:
+  - make image
+after_success:
+  - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin && make push-image
+notifications:
+  email: true
