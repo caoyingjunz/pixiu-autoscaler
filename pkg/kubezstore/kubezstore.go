@@ -39,8 +39,8 @@ type SafeStore struct {
 }
 
 func (s *SafeStore) Get(key string) (*autoscalingv2.HorizontalPodAutoscaler, bool) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
+	s.lock.RLock()
+	defer s.lock.RUnlock()
 	item, exists := s.items[key]
 	return item, exists
 }
