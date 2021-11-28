@@ -7,7 +7,7 @@
 kubectl apply -f pixiu-autoscaler-controller.yaml
 ```
 
-然后通过 `kubectl get pod -l pixiu.hpa.controller=pixiu-autoscaler-controller` 能看到 `pixiu-autoscaler` 已经启动成功.
+然后通过 `kubectl get pod -l pixiu.hpa.controller=pixiu-autoscaler-controller -n kube-system` 能看到 `pixiu-autoscaler` 已经启动成功.
 
 ``` bash
 NAME                                          READY   STATUS    RESTARTS   AGE

@@ -56,7 +56,7 @@ spec:
         pixiu.hpa.controller: pixiu-autoscaler-controller
     spec:
       containers:
-        - image: jacky06/pixiu-autoscaler-controller:v0.0.1
+        - image: jacky06/pixiu-autoscaler-controller
           command:
             - pixiu-autoscaler-controller
           imagePullPolicy: IfNotPresent
