@@ -57,3 +57,5 @@ metadata:
 ```
 
 `pixiu-autoscaler-controller` 会根据注释的变化，自动同步 `HPA` 的生命周期.
+
+Copyright 2019 caoyingjun (cao.yingjunz@gmail.com) Apache License 2.0
