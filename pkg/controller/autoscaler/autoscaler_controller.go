@@ -44,7 +44,6 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/caoyingjunz/pixiu-autoscaler/pkg/controller"
-	"github.com/caoyingjunz/pixiu-autoscaler/pkg/kubezstore"
 )
 
 const (
@@ -73,8 +72,9 @@ type AutoscalerController struct {
 	client        clientset.Interface
 	eventRecorder record.EventRecorder
 
-	syncHandler       func(hpaKey string) error
-	enqueueAutoscaler func(hpa *autoscalingv2.HorizontalPodAutoscaler)
+	syncHandler             func(hpaKey string) error
+	enqueueAutoscaler       func(hpa *autoscalingv2.HorizontalPodAutoscaler)
+	enqueueDeleteAutoscaler func(hpa *autoscalingv2.HorizontalPodAutoscaler)
 
 	// dLister can list/get deployments from the shared informer's store
 	dLister appslisters.DeploymentLister
@@ -90,10 +90,11 @@ type AutoscalerController struct {
 	// hpaListerSynced returns true if the HPA store has been synced at least once.
 	hpaListerSynced cache.InformerSynced
 
-	// AutoscalerController that need to be synced
+	// AutoscalerController that addEvent and updateEvent need to be synced
 	queue workqueue.RateLimitingInterface
-	// Safe Store than to store the obj
-	store kubezstore.SafeStoreInterface
+
+	// AutoscalerController that deleteEvent need to be synced
+	deleteQueue workqueue.RateLimitingInterface
 }
 
 // NewAutoscalerController creates a new AutoscalerController.
@@ -107,16 +108,16 @@ func NewAutoscalerController(
 	eventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: client.CoreV1().Events("")})
 
 	if client != nil && client.CoreV1().RESTClient().GetRateLimiter() != nil {
-		if err := ratelimiter.RegisterMetricAndTrackRateLimiterUsage("autoscaler_controller", client.CoreV1().RESTClient().GetRateLimiter()); err != nil {
+		if err := ratelimiter.RegisterMetricAndTrackRateLimiterUsage("pixiu_autoscaler", client.CoreV1().RESTClient().GetRateLimiter()); err != nil {
 			return nil, err
 		}
 	}
 
 	ac := &AutoscalerController{
 		client:        client,
-		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "autoscaler-controller"}),
-		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "autoscaler"),
-		store:         kubezstore.NewSafeStore(),
+		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "pixiu-autoscaler"}),
+		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "AddOrUpdate"),
+		deleteQueue:   workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Delete"),
 	}
 
 	// Deployment
@@ -147,6 +148,7 @@ func NewAutoscalerController(
 	// syncAutoscalers
 	ac.syncHandler = ac.syncAutoscalers
 	ac.enqueueAutoscaler = ac.enqueue
+	ac.enqueueDeleteAutoscaler = ac.enqueueDelete
 
 	ac.dListerSynced = dInformer.Informer().HasSynced
 	ac.sListerSynced = sInformer.Informer().HasSynced
@@ -160,8 +162,8 @@ func (ac *AutoscalerController) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ac.queue.ShutDown()
 
-	klog.Infof("Starting Autoscaler Controller")
-	defer klog.Infof("Shutting down Autoscaler Controller")
+	klog.Infof("Starting Pixiu Autoscaler Controller")
+	defer klog.Infof("Shutting down Pixiu Autoscaler Controller")
 
 	// Wait for all involved caches to be synced, before processing items from the queue is started
 	if !cache.WaitForNamedCacheSync("pixiu-autoscaler-manager", stopCh, ac.dListerSynced, ac.sListerSynced, ac.hpaListerSynced) {
@@ -178,9 +180,9 @@ func (ac *AutoscalerController) Run(workers int, stopCh <-chan struct{}) {
 // syncAutoscaler will sync the autoscaler with the given key.
 func (ac *AutoscalerController) syncAutoscalers(key string) error {
 	starTime := time.Now()
-	klog.V(2).Infof("Start syncing autoscaler %q (%v)", key, starTime)
+	klog.V(2).Infof("Start syncing pixiu autoscaler %q (%v)", key, starTime)
 	defer func() {
-		klog.V(2).Infof("Finished syncing autoscaler %q (%v)", key, time.Since(starTime))
+		klog.V(2).Infof("Finished syncing pixiu autoscaler %q (%v)", key, time.Since(starTime))
 	}()
 
 	// Delete the obj from store even though the syncAutoscalers failed
@@ -363,7 +365,6 @@ func (ac *AutoscalerController) HandlerAddEvents(obj interface{}) {
 		return
 	}
 	ac.wrapInnerEvent(hpa, AddEvent)
-	ac.store.Update(key, hpa)
 
 	ac.enqueueAutoscaler(hpa)
 }
@@ -449,7 +450,6 @@ func (ac *AutoscalerController) HandlerDeleteEvents(obj interface{}) {
 		return
 	}
 	ac.wrapInnerEvent(hpa, DeleteEvent)
-	ac.store.Update(key, hpa)
 
 	ac.enqueueAutoscaler(hpa)
 }
@@ -501,7 +501,6 @@ func (ac *AutoscalerController) deleteHPA(obj interface{}) {
 		return
 	}
 	ac.wrapInnerEvent(h, RecoverDeleteEvent)
-	ac.store.Update(key, h)
 
 	ac.enqueueAutoscaler(h)
 }
@@ -514,6 +513,16 @@ func (ac *AutoscalerController) enqueue(hpa *autoscalingv2.HorizontalPodAutoscal
 	}
 
 	ac.queue.Add(key)
+}
+
+func (ac *AutoscalerController) enqueueDelete(hpa *autoscalingv2.HorizontalPodAutoscaler) {
+	key, err := controller.KeyFunc(hpa)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", hpa, err))
+		return
+	}
+
+	ac.deleteQueue.Add(key)
 }
 
 // worker runs a worker thread that just dequeues items, processes then, and marks them done.
@@ -553,7 +562,13 @@ func (ac *AutoscalerController) handleErr(err error, key interface{}) {
 
 // This functions just wrap Handler Deployment Events for improve the readability of codes
 func (ac *AutoscalerController) addDeployment(obj interface{}) {
-	klog.V(2).Infof("Handering add Deployment event")
+	d := obj.(*appsv1.Deployment)
+	klog.V(4).InfoS("Adding deployment", "deployment", klog.KObj(d))
+
+	if !controller.IsNeedForHPAs(d.Annotations) {
+		return
+	}
+
 	ac.HandlerAddEvents(obj)
 }
 

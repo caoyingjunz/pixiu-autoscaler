@@ -19,8 +19,6 @@ package controller
 import (
 	"fmt"
 	"strconv"
-
-	"github.com/caoyingjunz/pixiu-autoscaler/pkg/kubezstore"
 )
 
 const (
