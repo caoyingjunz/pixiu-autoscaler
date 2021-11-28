@@ -104,7 +104,7 @@ func Run(c *config.KubezConfiguration) error {
 
 		kubezCtx, err := CreateControllerContext(clientBuilder, clientBuilder, ctx.Done())
 		if err != nil {
-			klog.Fatal("create kubez context failed: %v", err)
+			klog.Fatalf("create kubez context failed: %v", err)
 		}
 
 		ac, err := autoscaler.NewAutoscalerController(
