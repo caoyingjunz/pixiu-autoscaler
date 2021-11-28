@@ -1,4 +1,4 @@
-# Pixiu-autoscaler
+# Pixiu autoscaler
 
 ## Installing
 `pixiu-autoscaler` 控制器的安装非常简单，通过 `kubectl` 执行 `apply` 如下文件即可完成安装，真正做到猩猩都能使用.
@@ -7,12 +7,12 @@
 kubectl apply -f pixiu-autoscaler-controller.yaml
 ```
 
-然后通过 `kubectl get pod -l kubez.hpa.controller=kubez-autoscaler` 能看到 `pixiu-autoscaler` 已经启动成功.
+然后通过 `kubectl get pod -l pixiu.hpa.controller=pixiu-autoscaler-controller` 能看到 `pixiu-autoscaler` 已经启动成功.
 
 ``` bash
 NAME                                          READY   STATUS    RESTARTS   AGE
-kubez-autoscaler-controller-dbc4bc4d8-hwpqz   1/1     Running   0          20s
-kubez-autoscaler-controller-dbc4bc4d8-tqxrl   1/1     Running   0          20s
+pixiu-autoscaler-controller-dbc4bc4d8-hwpqz   1/1     Running   0          20s
+pixiu-autoscaler-controller-dbc4bc4d8-tqxrl   1/1     Running   0          20s
 ```
 
 ## Tests
