@@ -5,13 +5,13 @@ PLATFORM ?= linux/amd64,linux/arm64
 TAG ?= latest
 OS ?= linux
 ARCH ?= amd64
-IMAGE ?= $(ORG)/kubez-autoscaler-controller:$(TAG)
+IMAGE ?= $(ORG)/pixiu-autoscaler-controller:$(TAG)
 GOPROXY ?=
 
 .PHONY: build image push-image
 
 build:
-	CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) GOPROXY=$(GOPROXY) go build -o $(TARGET_DIR)/kubez-autoscaler-controller ./cmd
+	CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) GOPROXY=$(GOPROXY) go build -o $(TARGET_DIR)/pixiu-autoscaler-controller ./cmd
 
 image:
 ifeq ($(BUILDX), false)

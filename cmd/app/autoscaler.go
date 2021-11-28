@@ -32,10 +32,10 @@ import (
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/klog/v2"
 
-	"github.com/caoyingjunz/kubez-autoscaler/cmd/app/config"
-	"github.com/caoyingjunz/kubez-autoscaler/cmd/app/options"
-	"github.com/caoyingjunz/kubez-autoscaler/pkg/controller"
-	"github.com/caoyingjunz/kubez-autoscaler/pkg/controller/autoscaler"
+	"github.com/caoyingjunz/pixiu-autoscaler/cmd/app/config"
+	"github.com/caoyingjunz/pixiu-autoscaler/cmd/app/options"
+	"github.com/caoyingjunz/pixiu-autoscaler/pkg/controller"
+	"github.com/caoyingjunz/pixiu-autoscaler/pkg/controller/autoscaler"
 )
 
 const (
@@ -50,8 +50,8 @@ func NewAutoscalerCommand() *cobra.Command {
 	}
 
 	cmd := &cobra.Command{
-		Use: "kubez-autoscaler",
-		Long: `The kubez autoscaler manager is a daemon than embeds
+		Use: "pixiu-autoscaler",
+		Long: `The pixiu autoscaler controller is a daemon than embeds
 the core control loops shipped with advanced HPA.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			c, err := s.Config()
@@ -80,7 +80,7 @@ the core control loops shipped with advanced HPA.`,
 	return cmd
 }
 
-// Run runs the kubez-autoscaler process. This should never exit.
+// Run runs the pixiu-autoscaler process. This should never exit.
 func Run(c *config.KubezConfiguration) error {
 	go func() {
 		if !c.KubezPprof.Start {
@@ -104,7 +104,7 @@ func Run(c *config.KubezConfiguration) error {
 
 		kubezCtx, err := CreateControllerContext(clientBuilder, clientBuilder, ctx.Done())
 		if err != nil {
-			klog.Fatalf("create kubez context failed: %v", err)
+			klog.Fatalf("create pixiu context failed: %v", err)
 		}
 
 		ac, err := autoscaler.NewAutoscalerController(
@@ -167,7 +167,7 @@ func Run(c *config.KubezConfiguration) error {
 			},
 		},
 		//WatchDog: electionChecker,
-		Name: "kubez-autoscaler-manager",
+		Name: "pixiu-autoscaler-manager",
 	})
 	panic("unreachable")
 

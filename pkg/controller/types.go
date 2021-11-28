@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/caoyingjunz/kubez-autoscaler/pkg/kubezstore"
+	"github.com/caoyingjunz/pixiu-autoscaler/pkg/kubezstore"
 )
 
 const (

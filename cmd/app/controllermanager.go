@@ -27,10 +27,10 @@ import (
 	"k8s.io/client-go/metadata/metadatainformer"
 	"k8s.io/client-go/restmapper"
 
-	"github.com/caoyingjunz/kubez-autoscaler/pkg/controller"
+	"github.com/caoyingjunz/pixiu-autoscaler/pkg/controller"
 )
 
-// ControllerContext defines the context obj for kubez-autoscaler
+// ControllerContext defines the context obj for pixiu-autoscaler
 type ControllerContext struct {
 
 	// ClientBuilder will provide a client for this controller to use

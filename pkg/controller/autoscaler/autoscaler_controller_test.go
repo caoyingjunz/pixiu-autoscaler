@@ -14,28 +14,4 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package main
-
-import (
-	"flag"
-	"math/rand"
-	"os"
-	"time"
-
-	"k8s.io/klog/v2"
-
-	"github.com/caoyingjunz/pixiu-autoscaler/cmd/app"
-)
-
-func main() {
-	rand.Seed(time.Now().UnixNano())
-
-	klog.InitFlags(nil)
-	flag.Parse()
-
-	command := app.NewAutoscalerCommand()
-
-	if err := command.Execute(); err != nil {
-		os.Exit(1)
-	}
-}
+package autoscaler
