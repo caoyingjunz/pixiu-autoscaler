@@ -31,10 +31,13 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - name: Run autoscaler unit test
-        run: go test -v ./...
-
       - name: Run go fmt test
         run: hack/verify-gofmt.sh
         env:
           GO111MODULE: auto
+
+      - name: Run autoscaler unit test
+        run: go test -v ./...
+
+      - name: Build the autoscaler binariy
+        run: go build -v ./...
