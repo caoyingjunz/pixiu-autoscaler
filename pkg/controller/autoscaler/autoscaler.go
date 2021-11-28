@@ -43,8 +43,8 @@ import (
 	"k8s.io/component-base/metrics/prometheus/ratelimiter"
 	"k8s.io/klog/v2"
 
-	"github.com/caoyingjunz/kubez-autoscaler/pkg/controller"
-	"github.com/caoyingjunz/kubez-autoscaler/pkg/kubezstore"
+	"github.com/caoyingjunz/pixiu-autoscaler/pkg/controller"
+	"github.com/caoyingjunz/pixiu-autoscaler/pkg/kubezstore"
 )
 
 const (
@@ -164,7 +164,7 @@ func (ac *AutoscalerController) Run(workers int, stopCh <-chan struct{}) {
 	defer klog.Infof("Shutting down Autoscaler Controller")
 
 	// Wait for all involved caches to be synced, before processing items from the queue is started
-	if !cache.WaitForNamedCacheSync("kubez-autoscaler-manager", stopCh, ac.dListerSynced, ac.sListerSynced, ac.hpaListerSynced) {
+	if !cache.WaitForNamedCacheSync("pixiu-autoscaler-manager", stopCh, ac.dListerSynced, ac.sListerSynced, ac.hpaListerSynced) {
 		return
 	}
 
