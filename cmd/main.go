@@ -24,7 +24,7 @@ import (
 
 	"k8s.io/klog/v2"
 
-	"github.com/caoyingjunz/kubez-autoscaler/cmd/app"
+	"github.com/caoyingjunz/pixiu-autoscaler/cmd/app"
 )
 
 func main() {

@@ -29,13 +29,13 @@ import (
 	componentbaseconfig "k8s.io/component-base/config"
 	"k8s.io/klog/v2"
 
-	"github.com/caoyingjunz/kubez-autoscaler/cmd/app/config"
-	"github.com/caoyingjunz/kubez-autoscaler/pkg/controller"
+	"github.com/caoyingjunz/pixiu-autoscaler/cmd/app/config"
+	"github.com/caoyingjunz/pixiu-autoscaler/pkg/controller"
 )
 
 const (
 	// KubezControllerManagerUserAgent is the userAgent name when starting kubez-autoscaler managers.
-	KubezControllerManagerUserAgent = "kubez-autoscaler-manager"
+	KubezControllerManagerUserAgent = "pixiu-autoscaler-manager"
 )
 
 // Options has all the params needed to run a Autoscaler
