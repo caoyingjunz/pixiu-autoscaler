@@ -48,24 +48,14 @@ const (
 	prometheusAverageValue = "prometheus." + KubezRootPrefix + KubezSeparator + targetAverageValue
 )
 
-var (
-	// Init SafeSet which contains the HPA Average Utilization / Value
-	kset = kubezstore.NewSafeSet(cpuAverageUtilization, memoryAverageUtilization, cpuAverageValue, memoryAverageValue)
-)
-
 // To ensure whether we need to maintain the HPA
 func IsNeedForHPAs(annotations map[string]string) bool {
 	if annotations == nil || len(annotations) == 0 {
 		return false
 	}
 
-	for aKey := range annotations {
-		if kset.Has(aKey) {
-			return true
-		}
-	}
-
-	return false
+	// TODO
+	return true
 }
 
 func ExtractReplicas(annotations map[string]string, replicasType string) (int32, error) {

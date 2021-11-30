@@ -26,7 +26,6 @@ import (
 	autoscalingv2 "k8s.io/api/autoscaling/v2beta2"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -48,14 +47,6 @@ import (
 
 const (
 	maxRetries = 15
-
-	AddEvent           string = "Add"
-	UpdateEvent        string = "Update"
-	DeleteEvent        string = "Delete"
-	RecoverDeleteEvent string = "RecoverDelete"
-	RecoverUpdateEvent string = "RecoverUpdate"
-
-	markInnerEvent string = "markInnerEvent"
 )
 
 const (
@@ -72,9 +63,8 @@ type AutoscalerController struct {
 	client        clientset.Interface
 	eventRecorder record.EventRecorder
 
-	syncHandler             func(hpaKey string) error
-	enqueueAutoscaler       func(hpa *autoscalingv2.HorizontalPodAutoscaler)
-	enqueueDeleteAutoscaler func(hpa *autoscalingv2.HorizontalPodAutoscaler)
+	syncHandler       func(hpaKey string) error
+	enqueueAutoscaler func(hpa *autoscalingv2.HorizontalPodAutoscaler)
 
 	// dLister can list/get deployments from the shared informer's store
 	dLister appslisters.DeploymentLister
@@ -90,11 +80,9 @@ type AutoscalerController struct {
 	// hpaListerSynced returns true if the HPA store has been synced at least once.
 	hpaListerSynced cache.InformerSynced
 
-	// AutoscalerController that addEvent and updateEvent need to be synced
-	queue workqueue.RateLimitingInterface
-
-	// AutoscalerController that deleteEvent need to be synced
-	deleteQueue workqueue.RateLimitingInterface
+	addHpaQueue    workqueue.RateLimitingInterface
+	updateHpaQueue workqueue.RateLimitingInterface
+	deleteHpaQueue workqueue.RateLimitingInterface
 }
 
 // NewAutoscalerController creates a new AutoscalerController.
@@ -114,10 +102,11 @@ func NewAutoscalerController(
 	}
 
 	ac := &AutoscalerController{
-		client:        client,
-		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "pixiu-autoscaler"}),
-		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "AddOrUpdate"),
-		deleteQueue:   workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Delete"),
+		client:         client,
+		eventRecorder:  eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "pixiu-autoscaler"}),
+		addHpaQueue:    workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "addHPA"),
+		updateHpaQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "updateHPA"),
+		deleteHpaQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "deleteHPA"),
 	}
 
 	// Deployment
@@ -145,11 +134,6 @@ func NewAutoscalerController(
 	ac.sLister = sInformer.Lister()
 	ac.hpaLister = hpaInformer.Lister()
 
-	// syncAutoscalers
-	ac.syncHandler = ac.syncAutoscalers
-	ac.enqueueAutoscaler = ac.enqueue
-	ac.enqueueDeleteAutoscaler = ac.enqueueDelete
-
 	ac.dListerSynced = dInformer.Informer().HasSynced
 	ac.sListerSynced = sInformer.Informer().HasSynced
 	ac.hpaListerSynced = hpaInformer.Informer().HasSynced
@@ -160,7 +144,9 @@ func NewAutoscalerController(
 // Run begins watching and syncing.
 func (ac *AutoscalerController) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
-	defer ac.queue.ShutDown()
+	defer ac.addHpaQueue.ShutDown()
+	defer ac.updateHpaQueue.ShutDown()
+	defer ac.deleteHpaQueue.ShutDown()
 
 	klog.Infof("Starting Pixiu Autoscaler Controller")
 	defer klog.Infof("Shutting down Pixiu Autoscaler Controller")
@@ -171,114 +157,26 @@ func (ac *AutoscalerController) Run(workers int, stopCh <-chan struct{}) {
 	}
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(ac.worker, time.Second, stopCh)
+		go wait.Until(ac.addHPAWorker, time.Second, stopCh)
 	}
 
 	<-stopCh
 }
 
 // syncAutoscaler will sync the autoscaler with the given key.
+// This function is not meant to be invoked concurrently with the same key.
 func (ac *AutoscalerController) syncAutoscalers(key string) error {
-	starTime := time.Now()
-	klog.V(2).Infof("Start syncing pixiu autoscaler %q (%v)", key, starTime)
+	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		klog.ErrorS(err, "Failed to split meta namespace cache key", "cacheKey", key)
+		return err
+	}
+
+	startTime := time.Now()
+	klog.V(4).InfoS("Started syncing pixiu autoscaler", "pixiuautoscaler", klog.KRef(namespace, name), "startTime", startTime)
 	defer func() {
-		klog.V(2).Infof("Finished syncing pixiu autoscaler %q (%v)", key, time.Since(starTime))
+		klog.V(4).InfoS("Finished syncing pixiu autoscaler", "pixiuautoscaler", klog.KRef(namespace, name), "duration", time.Since(startTime))
 	}()
-
-	// Delete the obj from store even though the syncAutoscalers failed
-	defer ac.store.Delete(key)
-
-	hpa, exists := ac.store.Get(key)
-	if !exists {
-		// Do nothing and return directly
-		return nil
-	}
-
-	kind := hpa.Spec.ScaleTargetRef.Kind
-
-	var err error
-	event := ac.popInnerEvent(hpa)
-	klog.V(0).Infof("Handlering %s event for %s/%s from %s", event, hpa.Namespace, hpa.Name, kind)
-
-	switch event {
-	case AddEvent:
-		_, err = ac.client.AutoscalingV2beta2().
-			HorizontalPodAutoscalers(hpa.Namespace).Create(context.TODO(), hpa, metav1.CreateOptions{})
-		if err != nil && !errors.IsAlreadyExists(err) {
-			msg := fmt.Sprintf("Failed to create HPA %s/%s for %s", hpa.Namespace, hpa.Name, kind)
-			ac.eventRecorder.Eventf(hpa, v1.EventTypeWarning, "FailedCreateHPA", msg)
-			return err
-		}
-		ac.eventRecorder.Eventf(hpa, v1.EventTypeNormal, "CreateHPA",
-			fmt.Sprintf("Create HPA %s/%s for %s success", hpa.Namespace, hpa.Name, kind))
-	case UpdateEvent:
-		_, err = ac.client.AutoscalingV2beta2().
-			HorizontalPodAutoscalers(hpa.Namespace).Update(context.TODO(), hpa, metav1.UpdateOptions{})
-		if err != nil && !errors.IsNotFound(err) {
-			msg := fmt.Sprintf("Failed to update HPA %s/%s for %s", hpa.Namespace, hpa.Name, kind)
-			ac.eventRecorder.Eventf(hpa, v1.EventTypeWarning, "FailedUpdateHPA", msg)
-			return err
-		}
-		ac.eventRecorder.Eventf(hpa, v1.EventTypeNormal, "UpdateHPA",
-			fmt.Sprintf("Update HPA %s/%s for %s success", hpa.Namespace, hpa.Name, kind))
-	case DeleteEvent:
-		err = ac.client.AutoscalingV2beta2().
-			HorizontalPodAutoscalers(hpa.Namespace).Delete(context.TODO(), hpa.Name, metav1.DeleteOptions{})
-		if err != nil && !errors.IsNotFound(err) {
-			msg := fmt.Sprintf("Failed to delete HPA %s/%s for %s", hpa.Namespace, hpa.Name, kind)
-			ac.eventRecorder.Eventf(hpa, v1.EventTypeWarning, "FailedDeleteHPA", msg)
-			return err
-		}
-		ac.eventRecorder.Eventf(hpa, v1.EventTypeNormal, "DeleteHPA",
-			fmt.Sprintf("Delete HPA %s/%s for %s success", hpa.Namespace, hpa.Name, kind))
-	case RecoverUpdateEvent:
-		// Since the HPA has been updated, we need to get origin spec to check whether it shouled be recover
-		newHPA, err := ac.GetNewestHPAFromResource(hpa)
-		if err != nil {
-			msg := fmt.Sprintf("Failed to get update newest HPA %s/%s for %s", hpa.Namespace, hpa.Name, kind)
-			ac.eventRecorder.Eventf(hpa, v1.EventTypeWarning, "FailedNewestHPA", msg)
-			return err
-		}
-		// no need to Recover HPA from Update event
-		if newHPA == nil {
-			return nil
-		}
-		if reflect.DeepEqual(hpa.Spec, newHPA.Spec) {
-			klog.V(2).Infof("HPA: %s/%s spec is not changed, no need to updated", hpa.Namespace, hpa.Name)
-			return nil
-		}
-		_, err = ac.client.AutoscalingV2beta2().
-			HorizontalPodAutoscalers(newHPA.Namespace).Update(context.TODO(), newHPA, metav1.UpdateOptions{})
-		if err != nil && !errors.IsNotFound(err) {
-			msg := fmt.Sprintf("Failed to Recover update HPA %s/%s for %s", hpa.Namespace, hpa.Name, kind)
-			ac.eventRecorder.Eventf(hpa, v1.EventTypeWarning, "FailedRecoverHPA", msg)
-			return err
-		}
-		ac.eventRecorder.Eventf(hpa, v1.EventTypeNormal, "RecoverHPA",
-			fmt.Sprintf("Recover Update HPA %s/%s for %s success", hpa.Namespace, hpa.Name, kind))
-	case RecoverDeleteEvent:
-		newHPA, err := ac.GetNewestHPAFromResource(hpa)
-		if err != nil {
-			msg := fmt.Sprintf("Failed to get delete newest HPA %s/%s for %s", hpa.Namespace, hpa.Name, kind)
-			ac.eventRecorder.Eventf(hpa, v1.EventTypeWarning, "FailedNewestHPA", msg)
-			return err
-		}
-		// no need to Recover HPA from Delete event
-		if newHPA == nil {
-			return nil
-		}
-		_, err = ac.client.AutoscalingV2beta2().
-			HorizontalPodAutoscalers(newHPA.Namespace).Create(context.TODO(), newHPA, metav1.CreateOptions{})
-		if err != nil && !errors.IsAlreadyExists(err) {
-			msg := fmt.Sprintf("Failed to get delete newest HPA %s/%s for %s", hpa.Namespace, hpa.Name, kind)
-			ac.eventRecorder.Eventf(hpa, v1.EventTypeWarning, "FailedCreateHPA", msg)
-			return err
-		}
-		ac.eventRecorder.Eventf(hpa, v1.EventTypeNormal, "RecoverHPA",
-			fmt.Sprintf("Recover Delete HPA %s/%s for %s success", hpa.Namespace, hpa.Name, kind))
-	default:
-		return fmt.Errorf("Unsupported handlers event %s", event)
-	}
 
 	return err
 }
@@ -320,28 +218,6 @@ func (ac *AutoscalerController) GetNewestHPAFromResource(
 		hpa.Name, hpa.Namespace, uid, appsAPIVersion, kind, annotations)
 }
 
-// To insert annotation to distinguish the event type
-func (ac *AutoscalerController) wrapInnerEvent(hpa *autoscalingv2.HorizontalPodAutoscaler, event string) {
-	// there is no necessary to lock the Annotations
-	if hpa.Annotations == nil {
-		hpa.Annotations = map[string]string{
-			markInnerEvent: event,
-		}
-		return
-	}
-	hpa.Annotations[markInnerEvent] = event
-}
-
-// To pop kubez annotation and clean up kubez marker from HPA
-func (ac *AutoscalerController) popInnerEvent(hpa *autoscalingv2.HorizontalPodAutoscaler) string {
-	event, exists := hpa.Annotations[markInnerEvent]
-	// This shouldn't happen, because we only insert annotation for hpa
-	if exists {
-		delete(hpa.Annotations, markInnerEvent)
-	}
-	return event
-}
-
 func (ac *AutoscalerController) HandlerAddEvents(obj interface{}) {
 	ascCtx := controller.NewAutoscalerContext(obj)
 	klog.V(2).Infof("Adding %s %s/%s", ascCtx.Kind, ascCtx.Namespace, ascCtx.Name)
@@ -364,7 +240,6 @@ func (ac *AutoscalerController) HandlerAddEvents(obj interface{}) {
 		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", hpa, err))
 		return
 	}
-	ac.wrapInnerEvent(hpa, AddEvent)
 
 	ac.enqueueAutoscaler(hpa)
 }
@@ -459,105 +334,89 @@ func (ac *AutoscalerController) addHPA(obj interface{}) {
 	if !controller.ManagerByKubezController(h) {
 		return
 	}
-	klog.V(0).Infof("Adding HPA(manager by kubez) %s/%s", h.Namespace, h.Name)
-}
-
-// updateHPA figures out what HPA(s) is updated and wake them up.
-// old and cur must be *autoscalingv2.HorizontalPodAutoscaler types.
-func (ac *AutoscalerController) updateHPA(old, cur interface{}) {
-	oldH := old.(*autoscalingv2.HorizontalPodAutoscaler)
-	curH := cur.(*autoscalingv2.HorizontalPodAutoscaler)
-	if oldH.ResourceVersion == curH.ResourceVersion {
-		// Periodic resync will send update events for all known HPAs.
-		// Two different versions of the same HPA will always have different ResourceVersions.
-		return
-	}
-	if !controller.ManagerByKubezController(oldH) {
-		return
-	}
-	klog.V(0).Infof("Updating HPA %s/%s", oldH.Namespace, oldH.Name)
-
-	key, err := controller.KeyFunc(curH)
-	if err != nil {
-		return
-	}
-	// To insert annotation to distinguish the event type is Update
-	ac.wrapInnerEvent(curH, RecoverUpdateEvent)
-	ac.store.Update(key, curH)
-
-	ac.enqueueAutoscaler(curH)
-}
-
-func (ac *AutoscalerController) deleteHPA(obj interface{}) {
-	h := obj.(*autoscalingv2.HorizontalPodAutoscaler)
-	if !controller.ManagerByKubezController(h) {
-		return
-	}
-	klog.V(0).Infof("Deleting HPA %s/%s", h.Namespace, h.Name)
 
 	key, err := controller.KeyFunc(h)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", h, err))
 		return
 	}
-	ac.wrapInnerEvent(h, RecoverDeleteEvent)
 
-	ac.enqueueAutoscaler(h)
+	klog.V(0).Infof("Adding HPA(manager by pixiu) %s/%s", h.Namespace, h.Name)
+	ac.addHpaQueue.Add(key)
 }
 
-func (ac *AutoscalerController) enqueue(hpa *autoscalingv2.HorizontalPodAutoscaler) {
-	key, err := controller.KeyFunc(hpa)
+// updateHPA figures out what HPA(s) is updated and wake them up.
+// old and cur must be *autoscalingv2.HorizontalPodAutoscaler types.
+func (ac *AutoscalerController) updateHPA(old, cur interface{}) {
+	oldHPA := old.(*autoscalingv2.HorizontalPodAutoscaler)
+	curHPA := cur.(*autoscalingv2.HorizontalPodAutoscaler)
+	if oldHPA.ResourceVersion == curHPA.ResourceVersion {
+		// Periodic resync will send update events for all known HPAs.
+		// Two different versions of the same HPA will always have different ResourceVersions.
+		return
+	}
+	if !controller.ManagerByKubezController(oldHPA) {
+		return
+	}
+	klog.V(0).Infof("Updating HPA %s/%s", oldHPA.Namespace, oldHPA.Name)
+
+	key, err := controller.KeyFunc(curHPA)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", hpa, err))
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", curHPA, err))
+		return
+	}
+	ac.updateHpaQueue.Add(key)
+}
+
+func (ac *AutoscalerController) deleteHPA(obj interface{}) {
+	h := obj.(*autoscalingv2.HorizontalPodAutoscaler)
+	// TODO: rename the manager func
+	if !controller.ManagerByKubezController(h) {
 		return
 	}
 
-	ac.queue.Add(key)
-}
-
-func (ac *AutoscalerController) enqueueDelete(hpa *autoscalingv2.HorizontalPodAutoscaler) {
-	key, err := controller.KeyFunc(hpa)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", hpa, err))
-		return
-	}
-
-	ac.deleteQueue.Add(key)
+	klog.V(0).Infof("Deleting HPA %s/%s", h.Namespace, h.Name)
+	ac.deleteHpaQueue.Add(h)
 }
 
 // worker runs a worker thread that just dequeues items, processes then, and marks them done.
-func (ac *AutoscalerController) worker() {
-	for ac.processNextWorkItem() {
+func (ac *AutoscalerController) addHPAWorker() {
+	for ac.processNextAddHPAWorkItem() {
 	}
 }
 
-func (ac *AutoscalerController) processNextWorkItem() bool {
-	key, quit := ac.queue.Get()
+func (ac *AutoscalerController) processNextAddHPAWorkItem() bool {
+	key, quit := ac.addHpaQueue.Get()
 	if quit {
 		return false
 	}
-	defer ac.queue.Done(key)
+	defer ac.addHpaQueue.Done(key)
 
 	err := ac.syncHandler(key.(string))
-	ac.handleErr(err, key)
+	ac.handleAddHPAErr(err, key)
 	return true
 }
 
-func (ac *AutoscalerController) handleErr(err error, key interface{}) {
+func (ac *AutoscalerController) handleAddHPAErr(err error, key interface{}) {
 	if err == nil {
-		ac.queue.Forget(key)
+		ac.addHpaQueue.Forget(key)
 		return
 	}
 
-	if ac.queue.NumRequeues(key) < maxRetries {
+	if ac.addHpaQueue.NumRequeues(key) < maxRetries {
 		klog.V(0).Infof("Error syncing HPA %v: %v", key, err)
-		ac.queue.AddRateLimited(key)
+		ac.addHpaQueue.AddRateLimited(key)
 		return
 	}
 
 	utilruntime.HandleError(err)
 	klog.V(0).Infof("Dropping HPA %q out of the queue: %v", key, err)
-	ac.queue.Forget(key)
+	ac.addHpaQueue.Forget(key)
+}
+
+// extractHPAForDeployment returns the deployment managed by the given deployment.
+func (ac *AutoscalerController) extractHPAForDeployment(d *appsv1.Deployment) *autoscalingv2.HorizontalPodAutoscaler {
+	return nil
 }
 
 // This functions just wrap Handler Deployment Events for improve the readability of codes
@@ -568,23 +427,53 @@ func (ac *AutoscalerController) addDeployment(obj interface{}) {
 	if !controller.IsNeedForHPAs(d.Annotations) {
 		return
 	}
+	h := ac.extractHPAForDeployment(d)
 
-	ac.HandlerAddEvents(obj)
+	key, err := controller.KeyFunc(h)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", h, err))
+		return
+	}
+
+	klog.V(0).Infof("Adding HPA(manager by pixiu) %s/%s", h.Namespace, h.Name)
+	ac.addHpaQueue.Add(key)
 }
 
 func (ac *AutoscalerController) updateDeployment(old, cur interface{}) {
 	klog.V(2).Infof("Handering update Deployment event")
 	// Periodic resync will send update events for all known Deployments.
 	// Two different versions of the same Deployment will always have different RVs.
-	if old.(*appsv1.Deployment).ResourceVersion == cur.(*appsv1.Deployment).ResourceVersion {
+	oldD := old.(*appsv1.Deployment)
+	curD := cur.(*appsv1.Deployment)
+
+	if oldD.ResourceVersion == curD.ResourceVersion {
 		return
 	}
-	ac.HandlerUpdateEvents(old, cur)
+	if !controller.IsNeedForHPAs(curD.Annotations) {
+		return
+	}
+	h := ac.extractHPAForDeployment(curD)
+
+	key, err := controller.KeyFunc(h)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", h, err))
+		return
+	}
+
+	klog.V(0).Infof("Adding HPA(manager by pixiu) %s/%s", h.Namespace, h.Name)
+	ac.updateHpaQueue.Add(key)
 }
 
 func (ac *AutoscalerController) deleteDeployment(obj interface{}) {
 	klog.V(2).Infof("Handering delete Deployment event")
-	ac.HandlerDeleteEvents(obj)
+	d := obj.(*appsv1.Deployment)
+	if !controller.IsNeedForHPAs(d.Annotations) {
+		return
+	}
+	hpa := ac.extractHPAForDeployment(d)
+
+	klog.V(0).Infof("Deletinig HPA(manager by pixiu) %s/%s", hpa.Namespace, hpa.Name)
+	ac.deleteHpaQueue.Add(hpa)
 }
 
 // This functions just wrap Handler StatefulSet Events for improve the readability of codes
