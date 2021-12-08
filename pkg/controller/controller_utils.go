@@ -94,6 +94,19 @@ type AutoscalerContext struct {
 	Annotations map[string]string `json:"annotations"`
 }
 
+type Event string
+
+const (
+	Add    Event = "add"
+	Update Event = "update"
+	Delete Event = "delete"
+)
+
+type PixiuHpaSpec struct {
+	Event Event
+	Hpa   *autoscalingv2.HorizontalPodAutoscaler
+}
+
 // NewAutoscalerContext extracts contexts which we needed from kubernetes resouces.
 // The resouces could be Deployment, StatefulSet for now
 func NewAutoscalerContext(obj interface{}) *AutoscalerContext {
