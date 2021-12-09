@@ -1,5 +1,5 @@
 /*
-Copyright 2021.
+Copyright 2021 The Pixiu Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -81,7 +81,7 @@ the core control loops shipped with advanced HPA.`,
 }
 
 // Run runs the pixiu-autoscaler process. This should never exit.
-func Run(c *config.KubezConfiguration) error {
+func Run(c *config.PixiuConfiguration) error {
 	go func() {
 		if !c.KubezPprof.Start {
 			return
@@ -102,15 +102,15 @@ func Run(c *config.KubezConfiguration) error {
 			ClientConfig: kubeConfig,
 		}
 
-		kubezCtx, err := CreateControllerContext(clientBuilder, clientBuilder, ctx.Done())
+		pixiuCtx, err := CreateControllerContext(clientBuilder, clientBuilder, ctx.Done())
 		if err != nil {
 			klog.Fatalf("create pixiu context failed: %v", err)
 		}
 
 		ac, err := autoscaler.NewAutoscalerController(
-			kubezCtx.InformerFactory.Apps().V1().Deployments(),
-			kubezCtx.InformerFactory.Apps().V1().StatefulSets(),
-			kubezCtx.InformerFactory.Autoscaling().V2beta2().HorizontalPodAutoscalers(),
+			pixiuCtx.InformerFactory.Apps().V1().Deployments(),
+			pixiuCtx.InformerFactory.Apps().V1().StatefulSets(),
+			pixiuCtx.InformerFactory.Autoscaling().V2beta2().HorizontalPodAutoscalers(),
 			clientBuilder.ClientOrDie("shared-informers"),
 		)
 		if err != nil {
@@ -118,8 +118,8 @@ func Run(c *config.KubezConfiguration) error {
 		}
 		go ac.Run(workers, stopCh)
 
-		kubezCtx.InformerFactory.Start(stopCh)
-		kubezCtx.ObjectOrMetadataInformerFactory.Start(stopCh)
+		pixiuCtx.InformerFactory.Start(stopCh)
+		pixiuCtx.ObjectOrMetadataInformerFactory.Start(stopCh)
 
 		// Heathz Check
 		go StartHealthzServer(c.Healthz.HealthzHost, c.Healthz.HealthzPort)

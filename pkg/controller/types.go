@@ -1,5 +1,5 @@
 /*
-Copyright 2021.
+Copyright 2021 The Pixiu Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -44,3 +44,11 @@ const (
 	prometheusAverageValue = "prometheus." + PixiuRootPrefix + PixiuSeparator + targetAverageValue
 )
 
+const (
+	AppsAPIVersion        string = "apps/v1"
+	AutoscalingAPIVersion string = "autoscaling/v2beta2"
+
+	Deployment              string = "Deployment"
+	StatefulSet             string = "StatefulSet"
+	HorizontalPodAutoscaler string = "HorizontalPodAutoscaler"
+)

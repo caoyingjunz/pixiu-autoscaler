@@ -1,5 +1,5 @@
 /*
-Copyright 2021.
+Copyright 2021 The Pixiu Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@ import (
 	"strconv"
 	"strings"
 
-	apps "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2beta2"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -32,11 +31,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	utilpointer "k8s.io/utils/pointer"
-)
-
-const (
-	HorizontalPodAutoscaler string = "HorizontalPodAutoscaler"
-	AutoscalingAPIVersion   string = "autoscaling/v2beta2"
 )
 
 var (
@@ -108,35 +102,6 @@ type PixiuHpaSpec struct {
 	Hpa   *autoscalingv2.HorizontalPodAutoscaler
 }
 
-// NewAutoscalerContext extracts contexts which we needed from kubernetes resouces.
-// The resouces could be Deployment, StatefulSet for now
-func NewAutoscalerContext(obj interface{}) *AutoscalerContext {
-	// TODO: 后续优化，直接获取 hpa 的 Annotations
-	switch o := obj.(type) {
-	case *apps.Deployment:
-		return &AutoscalerContext{
-			Name:        o.Name,
-			Namespace:   o.Namespace,
-			APIVersion:  o.APIVersion,
-			Kind:        "Deployment",
-			UID:         o.UID,
-			Annotations: o.Annotations,
-		}
-	case *apps.StatefulSet:
-		return &AutoscalerContext{
-			Name:        o.Name,
-			Namespace:   o.Namespace,
-			APIVersion:  o.APIVersion,
-			Kind:        "StatefulSet",
-			UID:         o.UID,
-			Annotations: o.Annotations,
-		}
-	default:
-		// never happens
-		return nil
-	}
-}
-
 func CreateHorizontalPodAutoscaler(
 	name string,
 	namespace string,
@@ -145,12 +110,12 @@ func CreateHorizontalPodAutoscaler(
 	kind string,
 	annotations map[string]string) (*autoscalingv2.HorizontalPodAutoscaler, error) {
 
-	minReplicas, err := ExtractReplicas(annotations, MinReplicas)
+	minReplicas, err := extractReplicas(annotations, MinReplicas)
 	if err != nil {
 		klog.Errorf("Extract MinReplicas from annotations failed: %v", err)
 		return nil, err
 	}
-	maxReplicas, err := ExtractReplicas(annotations, MaxReplicas)
+	maxReplicas, err := extractReplicas(annotations, MaxReplicas)
 	if err != nil {
 		klog.Errorf("Extract maxReplicas from annotations failed: %v", err)
 		return nil, err
@@ -224,7 +189,7 @@ func parseMetrics(annotations map[string]string) ([]autoscalingv2.MetricSpec, er
 
 		switch metricNameSlice[len(metricNameSlice)-1] {
 		case targetAverageUtilization:
-			averageUtilization, err := ExtractAverageUtilization(metricValue)
+			averageUtilization, err := extractAverageUtilization(metricValue)
 			if err != nil {
 				return nil, err
 			}
@@ -282,8 +247,8 @@ func parseMetrics(annotations map[string]string) ([]autoscalingv2.MetricSpec, er
 
 func IsOwnerReference(uid types.UID, ownerReferences []metav1.OwnerReference) bool {
 	var isOwnerRef bool
-	for _, ownerReferences := range ownerReferences {
-		if uid == ownerReferences.UID {
+	for _, ownerReference := range ownerReferences {
+		if uid == ownerReference.UID {
 			isOwnerRef = true
 			break
 		}
@@ -314,7 +279,7 @@ func ManageByPixiuController(hpa *autoscalingv2.HorizontalPodAutoscaler) bool {
 	return false
 }
 
-func ExtractReplicas(annotations map[string]string, replicasType string) (int32, error) {
+func extractReplicas(annotations map[string]string, replicasType string) (int32, error) {
 	var Replicas int64
 	var err error
 	switch replicasType {
@@ -340,7 +305,7 @@ func ExtractReplicas(annotations map[string]string, replicasType string) (int32,
 	return int32(Replicas), err
 }
 
-func ExtractAverageUtilization(averageUtilization string) (int32, error) {
+func extractAverageUtilization(averageUtilization string) (int32, error) {
 	value64, err := strconv.ParseInt(averageUtilization, 10, 32)
 	if err != nil {
 		return 0, err
@@ -351,4 +316,3 @@ func ExtractAverageUtilization(averageUtilization string) (int32, error) {
 
 	return int32(value64), nil
 }
-
