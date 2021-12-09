@@ -1,5 +1,5 @@
 /*
-Copyright 2021.
+Copyright 2021 The Pixiu Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,9 +18,9 @@ package controller
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
-	apps "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2beta2"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -31,11 +31,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	utilpointer "k8s.io/utils/pointer"
-)
-
-const (
-	HorizontalPodAutoscaler string = "HorizontalPodAutoscaler"
-	AutoscalingAPIVersion   string = "autoscaling/v2beta2"
 )
 
 var (
@@ -94,33 +89,17 @@ type AutoscalerContext struct {
 	Annotations map[string]string `json:"annotations"`
 }
 
-// NewAutoscalerContext extracts contexts which we needed from kubernetes resouces.
-// The resouces could be Deployment, StatefulSet for now
-func NewAutoscalerContext(obj interface{}) *AutoscalerContext {
-	// TODO: 后续优化，直接获取 hpa 的 Annotations
-	switch o := obj.(type) {
-	case *apps.Deployment:
-		return &AutoscalerContext{
-			Name:        o.Name,
-			Namespace:   o.Namespace,
-			APIVersion:  o.APIVersion,
-			Kind:        "Deployment",
-			UID:         o.UID,
-			Annotations: o.Annotations,
-		}
-	case *apps.StatefulSet:
-		return &AutoscalerContext{
-			Name:        o.Name,
-			Namespace:   o.Namespace,
-			APIVersion:  o.APIVersion,
-			Kind:        "StatefulSet",
-			UID:         o.UID,
-			Annotations: o.Annotations,
-		}
-	default:
-		// never happens
-		return nil
-	}
+type Event string
+
+const (
+	Add    Event = "add"
+	Update Event = "update"
+	Delete Event = "delete"
+)
+
+type PixiuHpaSpec struct {
+	Event Event
+	Hpa   *autoscalingv2.HorizontalPodAutoscaler
 }
 
 func CreateHorizontalPodAutoscaler(
@@ -131,12 +110,12 @@ func CreateHorizontalPodAutoscaler(
 	kind string,
 	annotations map[string]string) (*autoscalingv2.HorizontalPodAutoscaler, error) {
 
-	minReplicas, err := ExtractReplicas(annotations, MinReplicas)
+	minReplicas, err := extractReplicas(annotations, MinReplicas)
 	if err != nil {
 		klog.Errorf("Extract MinReplicas from annotations failed: %v", err)
 		return nil, err
 	}
-	maxReplicas, err := ExtractReplicas(annotations, MaxReplicas)
+	maxReplicas, err := extractReplicas(annotations, MaxReplicas)
 	if err != nil {
 		klog.Errorf("Extract maxReplicas from annotations failed: %v", err)
 		return nil, err
@@ -191,14 +170,14 @@ func parseMetrics(annotations map[string]string) ([]autoscalingv2.MetricSpec, er
 	metrics := make([]autoscalingv2.MetricSpec, 0)
 
 	for metricName, metricValue := range annotations {
-		if !strings.Contains(metricName, "."+KubezRootPrefix) {
+		if !strings.Contains(metricName, "."+PixiuRootPrefix) {
 			continue
 		}
-		metricNameSlice := strings.Split(metricName, KubezSeparator)
+		metricNameSlice := strings.Split(metricName, PixiuRootPrefix)
 		if len(metricNameSlice) < 2 {
 			continue
 		}
-		metricTypeSlice := strings.Split(metricName, ".")
+		metricTypeSlice := strings.Split(metricName, PixiuDot)
 		if len(metricTypeSlice) < 2 {
 			continue
 		}
@@ -210,7 +189,7 @@ func parseMetrics(annotations map[string]string) ([]autoscalingv2.MetricSpec, er
 
 		switch metricNameSlice[len(metricNameSlice)-1] {
 		case targetAverageUtilization:
-			averageUtilization, err := ExtractAverageUtilization(metricValue)
+			averageUtilization, err := extractAverageUtilization(metricValue)
 			if err != nil {
 				return nil, err
 			}
@@ -268,8 +247,8 @@ func parseMetrics(annotations map[string]string) ([]autoscalingv2.MetricSpec, er
 
 func IsOwnerReference(uid types.UID, ownerReferences []metav1.OwnerReference) bool {
 	var isOwnerRef bool
-	for _, ownerReferences := range ownerReferences {
-		if uid == ownerReferences.UID {
+	for _, ownerReference := range ownerReferences {
+		if uid == ownerReference.UID {
 			isOwnerRef = true
 			break
 		}
@@ -277,14 +256,63 @@ func IsOwnerReference(uid types.UID, ownerReferences []metav1.OwnerReference) bo
 	return isOwnerRef
 }
 
-func ManagerByKubezController(hpa *autoscalingv2.HorizontalPodAutoscaler) bool {
+// To ensure whether we need to maintain the HPA
+func IsHorizontalPodAutoscalerOwner(annotations map[string]string) bool {
+	if annotations == nil || len(annotations) == 0 {
+		return false
+	}
+
+	// TODO
+	return true
+}
+
+func ManageByPixiuController(hpa *autoscalingv2.HorizontalPodAutoscaler) bool {
 	for _, managedField := range hpa.ManagedFields {
 		if managedField.APIVersion == AutoscalingAPIVersion &&
-			(managedField.Manager == KubezManager ||
+			(managedField.Manager == PixiuManager ||
 				// This condition used for local run
-				managedField.Manager == KubezMain) {
+				managedField.Manager == PixiuMain) {
 			return true
 		}
 	}
+
 	return false
+}
+
+func extractReplicas(annotations map[string]string, replicasType string) (int32, error) {
+	var Replicas int64
+	var err error
+	switch replicasType {
+	case MinReplicas:
+		minReplicas, exists := annotations[MinReplicas]
+		if exists {
+			Replicas, err = strconv.ParseInt(minReplicas, 10, 32)
+			if err != nil {
+				return 0, err
+			}
+		} else {
+			// Default minReplicas is 1
+			Replicas = int64(1)
+		}
+	case MaxReplicas:
+		maxReplicas, exists := annotations[MaxReplicas]
+		if !exists {
+			return 0, fmt.Errorf("%s is required", MaxReplicas)
+		}
+		Replicas, err = strconv.ParseInt(maxReplicas, 10, 32)
+	}
+
+	return int32(Replicas), err
+}
+
+func extractAverageUtilization(averageUtilization string) (int32, error) {
+	value64, err := strconv.ParseInt(averageUtilization, 10, 32)
+	if err != nil {
+		return 0, err
+	}
+	if value64 <= 0 && value64 > 100 {
+		return 0, fmt.Errorf("averageUtilization should be range 1 between 100")
+	}
+
+	return int32(value64), nil
 }

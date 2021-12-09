@@ -1,5 +1,5 @@
 /*
-Copyright 2021.
+Copyright 2021 The Pixiu Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -33,20 +33,20 @@ const (
 	defaultConfig = ".kube/config"
 )
 
-// KubezLeaderElectionConfiguration expands LeaderElectionConfiguration
+// PixiuLeaderElectionConfiguration expands LeaderElectionConfiguration
 // to include scheduler specific configuration.
-type KubezLeaderElectionConfiguration struct {
+type PixiuLeaderElectionConfiguration struct {
 	componentbaseconfig.LeaderElectionConfiguration
 }
 
-type KubezConfiguration struct {
+type PixiuConfiguration struct {
 	metav1.TypeMeta
 
 	LeaderClient    clientset.Interface
 	InformerFactory informers.SharedInformerFactory
 
 	// LeaderElection defines the configuration of leader election client.
-	LeaderElection KubezLeaderElectionConfiguration
+	LeaderElection PixiuLeaderElectionConfiguration
 
 	// event sink
 	EventRecorder record.EventRecorder

@@ -1,5 +1,5 @@
 /*
-Copyright 2021.
+Copyright 2021 The Pixiu Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -40,7 +40,7 @@ const (
 
 // Options has all the params needed to run a Autoscaler
 type Options struct {
-	ComponentConfig config.KubezConfiguration
+	ComponentConfig config.PixiuConfiguration
 
 	// ConfigFile is the location of the autoscaler's configuration file.
 	ConfigFile string
@@ -50,7 +50,7 @@ type Options struct {
 
 func NewOptions() (*Options, error) {
 
-	cfg := config.KubezConfiguration{}
+	cfg := config.PixiuConfiguration{}
 	o := &Options{
 		ComponentConfig: cfg,
 	}
@@ -144,7 +144,7 @@ func createRecorder(kubeClient clientset.Interface, userAgent string) record.Eve
 }
 
 // Config return a kubez controller manager config objective
-func (o *Options) Config() (*config.KubezConfiguration, error) {
+func (o *Options) Config() (*config.PixiuConfiguration, error) {
 	kubeConfig, err := config.BuildKubeConfig()
 	if err != nil {
 		return nil, err
@@ -159,7 +159,7 @@ func (o *Options) Config() (*config.KubezConfiguration, error) {
 	client := clientBuilder.ClientOrDie("leader-client")
 	eventRecorder := createRecorder(client, KubezControllerManagerUserAgent)
 
-	le := config.KubezLeaderElectionConfiguration{
+	le := config.PixiuLeaderElectionConfiguration{
 		componentbaseconfig.LeaderElectionConfiguration{
 			LeaderElect:       leaderElect,
 			LeaseDuration:     metav1.Duration{time.Duration(leaseDuration) * time.Second},
@@ -176,7 +176,7 @@ func (o *Options) Config() (*config.KubezConfiguration, error) {
 		Port:  pprofPort,
 	}
 
-	return &config.KubezConfiguration{
+	return &config.PixiuConfiguration{
 		LeaderClient:   client,
 		EventRecorder:  eventRecorder,
 		LeaderElection: le,
