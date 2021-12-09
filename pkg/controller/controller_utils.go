@@ -18,6 +18,7 @@ package controller
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	apps "k8s.io/api/apps/v1"
@@ -204,14 +205,14 @@ func parseMetrics(annotations map[string]string) ([]autoscalingv2.MetricSpec, er
 	metrics := make([]autoscalingv2.MetricSpec, 0)
 
 	for metricName, metricValue := range annotations {
-		if !strings.Contains(metricName, "."+KubezRootPrefix) {
+		if !strings.Contains(metricName, "."+PixiuRootPrefix) {
 			continue
 		}
-		metricNameSlice := strings.Split(metricName, KubezSeparator)
+		metricNameSlice := strings.Split(metricName, PixiuRootPrefix)
 		if len(metricNameSlice) < 2 {
 			continue
 		}
-		metricTypeSlice := strings.Split(metricName, ".")
+		metricTypeSlice := strings.Split(metricName, PixiuDot)
 		if len(metricTypeSlice) < 2 {
 			continue
 		}
@@ -290,14 +291,64 @@ func IsOwnerReference(uid types.UID, ownerReferences []metav1.OwnerReference) bo
 	return isOwnerRef
 }
 
-func ManagerByKubezController(hpa *autoscalingv2.HorizontalPodAutoscaler) bool {
+// To ensure whether we need to maintain the HPA
+func IsHorizontalPodAutoscalerOwner(annotations map[string]string) bool {
+	if annotations == nil || len(annotations) == 0 {
+		return false
+	}
+
+	// TODO
+	return true
+}
+
+func ManageByPixiuController(hpa *autoscalingv2.HorizontalPodAutoscaler) bool {
 	for _, managedField := range hpa.ManagedFields {
 		if managedField.APIVersion == AutoscalingAPIVersion &&
-			(managedField.Manager == KubezManager ||
+			(managedField.Manager == PixiuManager ||
 				// This condition used for local run
-				managedField.Manager == KubezMain) {
+				managedField.Manager == PixiuMain) {
 			return true
 		}
 	}
+
 	return false
 }
+
+func ExtractReplicas(annotations map[string]string, replicasType string) (int32, error) {
+	var Replicas int64
+	var err error
+	switch replicasType {
+	case MinReplicas:
+		minReplicas, exists := annotations[MinReplicas]
+		if exists {
+			Replicas, err = strconv.ParseInt(minReplicas, 10, 32)
+			if err != nil {
+				return 0, err
+			}
+		} else {
+			// Default minReplicas is 1
+			Replicas = int64(1)
+		}
+	case MaxReplicas:
+		maxReplicas, exists := annotations[MaxReplicas]
+		if !exists {
+			return 0, fmt.Errorf("%s is required", MaxReplicas)
+		}
+		Replicas, err = strconv.ParseInt(maxReplicas, 10, 32)
+	}
+
+	return int32(Replicas), err
+}
+
+func ExtractAverageUtilization(averageUtilization string) (int32, error) {
+	value64, err := strconv.ParseInt(averageUtilization, 10, 32)
+	if err != nil {
+		return 0, err
+	}
+	if value64 <= 0 && value64 > 100 {
+		return 0, fmt.Errorf("averageUtilization should be range 1 between 100")
+	}
+
+	return int32(value64), nil
+}
+
