@@ -339,7 +339,11 @@ func (ac *AutoscalerController) handleErr(err error, key interface{}) {
 
 // extractHPAForDeployment returns the deployment managed by the given deployment.
 func (ac *AutoscalerController) extractHPAForDeployment(d *appsv1.Deployment) (*autoscalingv2.HorizontalPodAutoscaler, error) {
-	return nil, nil
+	if !controller.IsHorizontalPodAutoscalerOwner(d.Annotations) {
+		return nil, nil
+	}
+
+	return controller.CreateHorizontalPodAutoscaler(d.Name, d.Namespace, d.UID, controller.AppsAPIVersion, controller.Deployment, d.Annotations)
 }
 
 // This functions just wrap Handler Deployment Events for improve the readability of codes
@@ -355,6 +359,10 @@ func (ac *AutoscalerController) addDeployment(obj interface{}) {
 	if err != nil {
 		return
 	}
+	if hpa == nil {
+		return
+	}
+
 	klog.V(0).Infof("Adding HPA(manager by pixiu) %s/%s", hpa.Namespace, hpa.Name)
 	ac.queue.Add(controller.PixiuHpaSpec{
 		Event: controller.Add,
@@ -385,6 +393,9 @@ func (ac *AutoscalerController) updateDeployment(old, cur interface{}) {
 			// TODO: handler error
 			return
 		}
+		if hpa == nil {
+			return
+		}
 		klog.V(0).Infof("Adding HPA(manager by pixiu) %s/%s", hpa.Namespace, hpa.Name)
 		ac.queue.Add(controller.PixiuHpaSpec{
 			Event: controller.Add,
@@ -399,6 +410,9 @@ func (ac *AutoscalerController) updateDeployment(old, cur interface{}) {
 		hpa, err := ac.extractHPAForDeployment(curD)
 		if err != nil {
 			// TODO: handler error
+			return
+		}
+		if hpa == nil {
 			return
 		}
 		klog.V(0).Infof("Updating HPA(manager by pixiu) %s/%s", hpa.Namespace, hpa.Name)
@@ -416,6 +430,10 @@ func (ac *AutoscalerController) updateDeployment(old, cur interface{}) {
 		if err != nil {
 			return
 		}
+		if hpa == nil {
+			return
+		}
+
 		klog.V(0).Infof("Deleting HPA(manager by pixiu) %s/%s", hpa.Namespace, hpa.Name)
 		ac.queue.Add(controller.PixiuHpaSpec{
 			Event: controller.Delete,
@@ -436,6 +454,9 @@ func (ac *AutoscalerController) deleteDeployment(obj interface{}) {
 	if err != nil {
 		return
 	}
+	if hpa == nil {
+		return
+	}
 
 	klog.V(0).Infof("Deletinig HPA(manager by pixiu) %s/%s", hpa.Namespace, hpa.Name)
 	ac.queue.Add(controller.PixiuHpaSpec{
@@ -445,8 +466,12 @@ func (ac *AutoscalerController) deleteDeployment(obj interface{}) {
 }
 
 // extractHPAForStatefulset returns the hpa managed by the given statefulset.
-func (ac *AutoscalerController) extractHPAForStatefulset(d *appsv1.StatefulSet) (*autoscalingv2.HorizontalPodAutoscaler, error) {
-	return nil, nil
+func (ac *AutoscalerController) extractHPAForStatefulset(s *appsv1.StatefulSet) (*autoscalingv2.HorizontalPodAutoscaler, error) {
+	if !controller.IsHorizontalPodAutoscalerOwner(s.Annotations) {
+		return nil, nil
+	}
+
+	return controller.CreateHorizontalPodAutoscaler(s.Name, s.Namespace, s.UID, controller.AppsAPIVersion, controller.StatefulSet, s.Annotations)
 }
 
 // This functions just wrap Handler StatefulSet Events for improve the readability of codes
@@ -460,6 +485,9 @@ func (ac *AutoscalerController) addStatefulset(obj interface{}) {
 
 	hpa, err := ac.extractHPAForStatefulset(sts)
 	if err != nil {
+		return
+	}
+	if hpa == nil {
 		return
 	}
 
@@ -493,6 +521,10 @@ func (ac *AutoscalerController) updateStatefulset(old, cur interface{}) {
 			// TODO: handler error
 			return
 		}
+		if hpa == nil {
+			return
+		}
+
 		klog.V(0).Infof("Adding HPA(manager by pixiu) %s/%s", hpa.Namespace, hpa.Name)
 		ac.queue.Add(controller.PixiuHpaSpec{
 			Event: controller.Add,
@@ -509,6 +541,10 @@ func (ac *AutoscalerController) updateStatefulset(old, cur interface{}) {
 			// TODO: handler error
 			return
 		}
+		if hpa == nil {
+			return
+		}
+
 		klog.V(0).Infof("Updating HPA(manager by pixiu) %s/%s", hpa.Namespace, hpa.Name)
 		ac.queue.Add(controller.PixiuHpaSpec{
 			Event: controller.Update,
@@ -525,6 +561,10 @@ func (ac *AutoscalerController) updateStatefulset(old, cur interface{}) {
 			// TODO: handler error
 			return
 		}
+		if hpa == nil {
+			return
+		}
+
 		klog.V(0).Infof("Deleting HPA(manager by pixiu) %s/%s", hpa.Namespace, hpa.Name)
 		ac.queue.Add(controller.PixiuHpaSpec{
 			Event: controller.Delete,
@@ -543,6 +583,9 @@ func (ac *AutoscalerController) deleteStatefulset(obj interface{}) {
 	}
 	hpa, err := ac.extractHPAForStatefulset(sts)
 	if err != nil {
+		return
+	}
+	if hpa == nil {
 		return
 	}
 
