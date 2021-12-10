@@ -256,16 +256,6 @@ func IsOwnerReference(uid types.UID, ownerReferences []metav1.OwnerReference) bo
 	return isOwnerRef
 }
 
-// To ensure whether we need to maintain the HPA
-func IsHorizontalPodAutoscalerOwner(annotations map[string]string) bool {
-	if annotations == nil || len(annotations) == 0 {
-		return false
-	}
-
-	// TODO
-	return true
-}
-
 func ManageByPixiuController(hpa *autoscalingv2.HorizontalPodAutoscaler) bool {
 	for _, managedField := range hpa.ManagedFields {
 		if managedField.APIVersion == AutoscalingAPIVersion &&
@@ -315,4 +305,17 @@ func extractAverageUtilization(averageUtilization string) (int32, error) {
 	}
 
 	return int32(value64), nil
+}
+
+// Empty is public since it is used by some internal API objects for conversions between external
+// string arrays and internal sets, and conversion logic requires public types today.
+type Empty struct{}
+
+func NewItems() map[string]Empty {
+	items := make(map[string]Empty)
+	for _, k := range []string{cpuAverageUtilization, memoryAverageUtilization, cpuAverageValue, memoryAverageValue} {
+		items[k] = Empty{}
+	}
+
+	return items
 }
