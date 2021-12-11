@@ -49,7 +49,8 @@ metadata:
     cpu.hpa.caoyingjunz.io/targetAverageValue: 600m
     memory.hpa.caoyingjunz.io/targetAverageValue: 60Mi
 
-    # TODO: prometheus 暂不支持
+    # prometheus examples
+    # TODO
     ...
   name: test1
   namespace: default
