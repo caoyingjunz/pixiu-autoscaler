@@ -112,7 +112,7 @@ func CreateHorizontalPodAutoscaler(
 
 	minReplicas, err := extractReplicas(annotations, MinReplicas)
 	if err != nil {
-		return nil, fmt.Errorf("extract MinReplicas from annotations failed: %v", err)
+		return nil, fmt.Errorf("extract minReplicas from annotations failed: %v", err)
 	}
 	maxReplicas, err := extractReplicas(annotations, MaxReplicas)
 	if err != nil {
@@ -136,7 +136,18 @@ func CreateHorizontalPodAutoscaler(
 		BlockOwnerDeletion: &blockOwnerDeletion,
 	}
 
-	hpa := &autoscalingv2.HorizontalPodAutoscaler{
+	spec := autoscalingv2.HorizontalPodAutoscalerSpec{
+		MinReplicas: utilpointer.Int32Ptr(minReplicas),
+		MaxReplicas: maxReplicas,
+		ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
+			APIVersion: apiVersion,
+			Kind:       kind,
+			Name:       name,
+		},
+		Metrics: metrics,
+	}
+
+	return &autoscalingv2.HorizontalPodAutoscaler{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       HorizontalPodAutoscaler,
 			APIVersion: AutoscalingAPIVersion,
@@ -148,19 +159,8 @@ func CreateHorizontalPodAutoscaler(
 				ownerReference,
 			},
 		},
-		Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
-			MinReplicas: utilpointer.Int32Ptr(minReplicas),
-			MaxReplicas: maxReplicas,
-			ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
-				APIVersion: apiVersion,
-				Kind:       kind,
-				Name:       name,
-			},
-			Metrics: metrics,
-		},
-	}
-
-	return hpa, nil
+		Spec: spec,
+	}, nil
 }
 
 // Parse and get metric type (valid is cpu and memory) and target
@@ -277,14 +277,12 @@ func extractReplicas(annotations map[string]string, replicasType string) (int32,
 	switch replicasType {
 	case MinReplicas:
 		minReplicas, exists := annotations[MinReplicas]
-		if exists {
-			Replicas, err = strconv.ParseInt(minReplicas, 10, 32)
-			if err != nil {
-				return 0, err
-			}
-		} else {
+		if !exists {
 			// Default minReplicas is 1
-			Replicas = int64(1)
+			return 1, nil
+		}
+		if Replicas, err = strconv.ParseInt(minReplicas, 10, 32); err != nil {
+			return 0, err
 		}
 	case MaxReplicas:
 		maxReplicas, exists := annotations[MaxReplicas]
