@@ -112,20 +112,17 @@ func CreateHorizontalPodAutoscaler(
 
 	minReplicas, err := extractReplicas(annotations, MinReplicas)
 	if err != nil {
-		klog.Errorf("Extract MinReplicas from annotations failed: %v", err)
-		return nil, err
+		return nil, fmt.Errorf("extract MinReplicas from annotations failed: %v", err)
 	}
 	maxReplicas, err := extractReplicas(annotations, MaxReplicas)
 	if err != nil {
-		klog.Errorf("Extract maxReplicas from annotations failed: %v", err)
-		return nil, err
+		return nil, fmt.Errorf("extract maxReplicas from annotations failed: %v", err)
 	}
-	metrics, err := parseMetrics(annotations)
+
+	metrics, err := parseMetricSpecs(annotations)
 	if err != nil {
-		klog.Errorf("Parse metrics from annotations failed: %v", err)
-		return nil, fmt.Errorf("Parse metrics from annotations failed: %v", err)
+		return nil, fmt.Errorf("parse metric specs from annotations failed: %v", err)
 	}
-	klog.Infof("Parse %d metrics from annotations for %s/%s", len(metrics), namespace, name)
 
 	controller := true
 	blockOwnerDeletion := true
@@ -166,35 +163,47 @@ func CreateHorizontalPodAutoscaler(
 	return hpa, nil
 }
 
-func parseMetrics(annotations map[string]string) ([]autoscalingv2.MetricSpec, error) {
-	metrics := make([]autoscalingv2.MetricSpec, 0)
+// Parse and get metric type (valid is cpu and memory) and target
+func getMetricTarget(metricName string) (string, string, error) {
+	metricTypeSlice := strings.Split(metricName, PixiuDot)
+	if len(metricTypeSlice) < 2 {
+		return "", "", fmt.Errorf("invalied metric item %s", metricName)
+	}
+	metricType := metricTypeSlice[0]
+	if metricType != cpu && metricType != memory {
+		return "", "", fmt.Errorf("unsupprted metric resource name: %s", metricType)
+	}
+
+	metricTargetSlice := strings.Split(metricName, PixiuSeparator)
+	if len(metricTargetSlice) < 2 {
+		return "", "", fmt.Errorf("invalied metric item %s", metricName)
+	}
+
+	return metricType, metricTargetSlice[len(metricTargetSlice)-1], nil
+}
+
+func parseMetricSpecs(annotations map[string]string) ([]autoscalingv2.MetricSpec, error) {
+	metricSpecs := make([]autoscalingv2.MetricSpec, 0)
 
 	for metricName, metricValue := range annotations {
-		if !strings.Contains(metricName, "."+PixiuRootPrefix) {
+		// let it go if annotation item are not the target
+		if !strings.Contains(metricName, PixiuDot+PixiuRootPrefix) {
 			continue
 		}
-		metricNameSlice := strings.Split(metricName, PixiuRootPrefix)
-		if len(metricNameSlice) < 2 {
-			continue
-		}
-		metricTypeSlice := strings.Split(metricName, PixiuDot)
-		if len(metricTypeSlice) < 2 {
-			continue
+		metricType, target, err := getMetricTarget(metricName)
+		if err != nil {
+			return nil, err
 		}
 
-		metricType := metricTypeSlice[0]
-		if metricType != cpu && metricType != memory {
-			return nil, fmt.Errorf("unsupprted metric resource name: %s", metricType)
-		}
-
-		switch metricNameSlice[len(metricNameSlice)-1] {
+		var metricSpec autoscalingv2.MetricSpec
+		switch target {
 		case targetAverageUtilization:
 			averageUtilization, err := extractAverageUtilization(metricValue)
 			if err != nil {
 				return nil, err
 			}
 
-			metric := autoscalingv2.MetricSpec{
+			metricSpec = autoscalingv2.MetricSpec{
 				Type: autoscalingv2.ResourceMetricSourceType,
 				Resource: &autoscalingv2.ResourceMetricSource{
 					Target: autoscalingv2.MetricTarget{
@@ -204,21 +213,13 @@ func parseMetrics(annotations map[string]string) ([]autoscalingv2.MetricSpec, er
 				},
 			}
 
-			// TODO: To be optimised
-			switch metricType {
-			case cpu:
-				metric.Resource.Name = v1.ResourceCPU
-			case memory:
-				metric.Resource.Name = v1.ResourceMemory
-			}
-			metrics = append(metrics, metric)
 		case targetAverageValue:
 			averageValue, err := resource.ParseQuantity(metricValue)
 			if err != nil {
 				return nil, err
 			}
 
-			metric := autoscalingv2.MetricSpec{
+			metricSpec = autoscalingv2.MetricSpec{
 				Type: autoscalingv2.ResourceMetricSourceType,
 				Resource: &autoscalingv2.ResourceMetricSource{
 					Target: autoscalingv2.MetricTarget{
@@ -227,22 +228,23 @@ func parseMetrics(annotations map[string]string) ([]autoscalingv2.MetricSpec, er
 					},
 				},
 			}
-
-			switch metricType {
-			case cpu:
-				metric.Resource.Name = v1.ResourceCPU
-			case memory:
-				metric.Resource.Name = v1.ResourceMemory
-			}
-			metrics = append(metrics, metric)
 		}
+
+		switch metricType {
+		case cpu:
+			metricSpec.Resource.Name = v1.ResourceCPU
+		case memory:
+			metricSpec.Resource.Name = v1.ResourceMemory
+		}
+
+		metricSpecs = append(metricSpecs, metricSpec)
 	}
 
-	if len(metrics) == 0 {
-		return nil, fmt.Errorf("could't parse metrics, the numbers is zero")
+	if len(metricSpecs) == 0 {
+		return nil, fmt.Errorf("could't parse metric specs, the numbers is zero")
 	}
 
-	return metrics, nil
+	return metricSpecs, nil
 }
 
 func IsOwnerReference(uid types.UID, ownerReferences []metav1.OwnerReference) bool {

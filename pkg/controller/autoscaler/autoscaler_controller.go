@@ -161,27 +161,26 @@ func (ac *AutoscalerController) Run(workers int, stopCh <-chan struct{}) {
 
 // To ensure whether we need to maintain the HPA
 func (ac *AutoscalerController) isHorizontalPodAutoscalerOwner(annotations map[string]string) bool {
-	if annotations == nil || len(annotations) == 0 {
+	if annotations == nil {
 		return false
 	}
 
-	// TODO: optimise the loop
-	var fdReplicas bool
+	var fdTarget, fdReplicas bool
 	for anno := range annotations {
-		if anno == controller.MaxReplicas {
-			fdReplicas = true
-			break
+		if !fdReplicas {
+			if anno == controller.MaxReplicas {
+				fdReplicas = true
+			}
 		}
-	}
-	if !fdReplicas {
-		return false
-	}
+		if !fdTarget {
+			_, found := ac.items[anno]
+			if found {
+				fdTarget = true
+			}
+		}
 
-	var fdTarget bool
-	for anno := range annotations {
-		_, fdTarget = ac.items[anno]
-		if fdTarget {
-			break
+		if fdReplicas && fdTarget {
+			return true
 		}
 	}
 
@@ -332,7 +331,7 @@ func (ac *AutoscalerController) deleteHPA(obj interface{}) {
 
 	klog.V(0).Infof("Deleting HPA %s/%s", hpa.Namespace, hpa.Name)
 	ac.queue.Add(controller.PixiuHpaSpec{
-		Event: controller.Delete,
+		Event: controller.Update,
 		Hpa:   hpa,
 	})
 }
@@ -350,7 +349,7 @@ func (ac *AutoscalerController) processNextWorkItem() bool {
 	}
 	defer ac.queue.Done(key)
 
-	hpaSpec := key.(*controller.PixiuHpaSpec)
+	hpaSpec := key.(controller.PixiuHpaSpec)
 
 	err := ac.syncHandler(hpaSpec.Hpa, hpaSpec.Event)
 	ac.handleErr(err, key)
