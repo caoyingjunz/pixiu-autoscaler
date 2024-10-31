@@ -49,6 +49,5 @@ const (
 	AutoscalingAPIVersion string = "autoscaling/v2"
 
 	Deployment              string = "Deployment"
-	StatefulSet             string = "StatefulSet"
 	HorizontalPodAutoscaler string = "HorizontalPodAutoscaler"
 )

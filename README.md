@@ -1,6 +1,6 @@
 # Pixiu Autoscaler
 
-`pixiu-autoscaler` 通过为 `deployment` / `statefulset` 添加 `annotations` 的方式，自动维护对应 `HorizontalPodAutoscaler` 的生命周期.
+`pixiu-autoscaler` 通过为 `workload` 添加 `annotations` 的方式，自动维护对应 `HorizontalPodAutoscaler` 的生命周期.
 
 ## Prerequisites
 
@@ -24,7 +24,7 @@ The steps can be found in [Installation](./deploy)
 
 ## Getting Started
 
-在 `deployment` / `statefulset` 的 `annotations` 中添加所需注释即可自动创建对应的 `HPA`
+在 `workload` 的 `annotations` 中添加所需注释即可自动创建对应的 `HPA`
 
 ```yaml
 apiVersion: apps/v1
@@ -49,7 +49,8 @@ metadata:
     cpu.hpa.caoyingjunz.io/targetAverageValue: 600m
     memory.hpa.caoyingjunz.io/targetAverageValue: 60Mi
 
-    # TODO: prometheus 暂不支持
+    # prometheus examples
+    # TODO
     ...
   name: test1
   namespace: default
@@ -58,4 +59,4 @@ metadata:
 
 `pixiu-autoscaler-controller` 会根据注释的变化，自动同步 `HPA` 的生命周期.
 
-Copyright 2019 caoyingjun (cao.yingjunz@gmail.com) Apache License 2.0
+Copyright 2019 caoyingjunz (cao.yingjunz@gmail.com) Apache License 2.0

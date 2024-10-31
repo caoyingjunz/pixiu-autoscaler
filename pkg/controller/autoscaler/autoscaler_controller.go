@@ -61,8 +61,6 @@ type AutoscalerController struct {
 
 	// dLister can list/get deployments from the shared informer's store
 	dLister appslisters.DeploymentLister
-	// sLister can list/get statefulset from the shared informer's store
-	sLister appslisters.StatefulSetLister
 	// hpaLister is able to list/get HPAs from the shared informer's cache
 	hpaLister autoscalinglisters.HorizontalPodAutoscalerLister
 
@@ -83,7 +81,6 @@ type AutoscalerController struct {
 // NewAutoscalerController creates a new AutoscalerController.
 func NewAutoscalerController(
 	dInformer appsinformers.DeploymentInformer,
-	sInformer appsinformers.StatefulSetInformer,
 	hpaInformer autoscalinginformers.HorizontalPodAutoscalerInformer,
 	client clientset.Interface) (*AutoscalerController, error) {
 	eventBroadcaster := record.NewBroadcaster()
@@ -110,13 +107,6 @@ func NewAutoscalerController(
 		DeleteFunc: ac.deleteDeployment,
 	})
 
-	// StatefulSet
-	sInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    ac.addStatefulset,
-		UpdateFunc: ac.updateStatefulset,
-		DeleteFunc: ac.deleteStatefulset,
-	})
-
 	// HorizontalPodAutoscaler
 	hpaInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ac.addHPA,
@@ -125,7 +115,6 @@ func NewAutoscalerController(
 	})
 
 	ac.dLister = dInformer.Lister()
-	ac.sLister = sInformer.Lister()
 	ac.hpaLister = hpaInformer.Lister()
 
 	// syncAutoscalers
@@ -133,7 +122,6 @@ func NewAutoscalerController(
 	ac.enqueueAutoscaler = ac.enqueue
 
 	ac.dListerSynced = dInformer.Informer().HasSynced
-	ac.sListerSynced = sInformer.Informer().HasSynced
 	ac.hpaListerSynced = hpaInformer.Informer().HasSynced
 
 	return ac, nil
@@ -248,22 +236,6 @@ func (ac *AutoscalerController) syncAutoscalers(hpa *autoscalingv2.HorizontalPod
 
 			uid = d.UID
 			annotations = d.Annotations
-		case controller.StatefulSet:
-			s, err := ac.sLister.StatefulSets(hpa.Namespace).Get(hpa.Name)
-			if err != nil {
-				if errors.IsNotFound(err) {
-					ac.queue.Add(controller.PixiuHpaSpec{
-						Event: controller.Delete,
-						Hpa:   hpa,
-					})
-				}
-				return err
-			}
-			if !controller.IsOwnerReference(s.UID, hpa.OwnerReferences) {
-				return nil
-			}
-			uid = s.UID
-			annotations = s.Annotations
 		}
 		if !ac.isHorizontalPodAutoscalerOwner(annotations) {
 			return nil
@@ -529,137 +501,6 @@ func (ac *AutoscalerController) deleteDeployment(obj interface{}) {
 	d := obj.(*appsv1.Deployment)
 
 	hpa, err := ac.extractHPAForDeployment(d)
-	if err != nil {
-		return
-	}
-	if hpa == nil {
-		return
-	}
-
-	klog.V(0).Infof("Deletinig HPA(manager by pixiu) %s/%s", hpa.Namespace, hpa.Name)
-	ac.queue.Add(controller.PixiuHpaSpec{
-		Event: controller.Delete,
-		Hpa:   hpa,
-	})
-}
-
-// extractHPAForStatefulset returns the hpa managed by the given statefulset.
-func (ac *AutoscalerController) extractHPAForStatefulset(s *appsv1.StatefulSet) (*autoscalingv2.HorizontalPodAutoscaler, error) {
-	if !ac.isHorizontalPodAutoscalerOwner(s.Annotations) {
-		return nil, nil
-	}
-
-	return controller.CreateHorizontalPodAutoscaler(s.Name, s.Namespace, s.UID, controller.AppsAPIVersion, controller.StatefulSet, s.Annotations)
-}
-
-// This functions just wrap Handler StatefulSet Events for improve the readability of codes
-func (ac *AutoscalerController) addStatefulset(obj interface{}) {
-	sts := obj.(*appsv1.StatefulSet)
-	klog.V(4).InfoS("Adding statefulset", "statefulset", klog.KObj(sts))
-
-	if !ac.isHorizontalPodAutoscalerOwner(sts.Annotations) {
-		return
-	}
-
-	hpa, err := ac.extractHPAForStatefulset(sts)
-	if err != nil {
-		return
-	}
-	if hpa == nil {
-		return
-	}
-
-	klog.V(0).Infof("Adding HPA(manager by pixiu) %s/%s", hpa.Namespace, hpa.Name)
-	ac.queue.Add(controller.PixiuHpaSpec{
-		Event: controller.Add,
-		Hpa:   hpa,
-	})
-}
-
-func (ac *AutoscalerController) updateStatefulset(old, cur interface{}) {
-	klog.V(2).Infof("Handlering update StatefulSet event")
-	oldSts := old.(*appsv1.StatefulSet)
-	curSts := cur.(*appsv1.StatefulSet)
-
-	// Periodic resync will send update events for all known Deployments.
-	// Two different versions of the same Deployment will always have different RVs.
-	if oldSts.ResourceVersion == curSts.ResourceVersion {
-		return
-	}
-
-	// 0. no HPA manger by Statefulset
-	if !ac.isHorizontalPodAutoscalerOwner(oldSts.Annotations) && !ac.isHorizontalPodAutoscalerOwner(curSts.Annotations) {
-		return
-	}
-
-	// 1. Add hpa
-	if !ac.isHorizontalPodAutoscalerOwner(oldSts.Annotations) && ac.isHorizontalPodAutoscalerOwner(curSts.Annotations) {
-		hpa, err := ac.extractHPAForStatefulset(oldSts)
-		if err != nil {
-			// TODO: handler error
-			return
-		}
-		if hpa == nil {
-			return
-		}
-
-		klog.V(0).Infof("Adding HPA(manager by pixiu) %s/%s", hpa.Namespace, hpa.Name)
-		ac.queue.Add(controller.PixiuHpaSpec{
-			Event: controller.Add,
-			Hpa:   hpa,
-		})
-
-		return
-	}
-
-	// 2. Update HPA
-	if ac.isHorizontalPodAutoscalerOwner(oldSts.Annotations) && ac.isHorizontalPodAutoscalerOwner(curSts.Annotations) {
-		hpa, err := ac.extractHPAForStatefulset(curSts)
-		if err != nil {
-			// TODO: handler error
-			return
-		}
-		if hpa == nil {
-			return
-		}
-
-		klog.V(0).Infof("Updating HPA(manager by pixiu) %s/%s", hpa.Namespace, hpa.Name)
-		ac.queue.Add(controller.PixiuHpaSpec{
-			Event: controller.Update,
-			Hpa:   hpa,
-		})
-
-		return
-	}
-
-	// 3. Delete HPA
-	if ac.isHorizontalPodAutoscalerOwner(oldSts.Annotations) && !ac.isHorizontalPodAutoscalerOwner(curSts.Annotations) {
-		hpa, err := ac.extractHPAForStatefulset(oldSts)
-		if err != nil {
-			// TODO: handler error
-			return
-		}
-		if hpa == nil {
-			return
-		}
-
-		klog.V(0).Infof("Deleting HPA(manager by pixiu) %s/%s", hpa.Namespace, hpa.Name)
-		ac.queue.Add(controller.PixiuHpaSpec{
-			Event: controller.Delete,
-			Hpa:   hpa,
-		})
-	}
-
-	return
-}
-
-func (ac *AutoscalerController) deleteStatefulset(obj interface{}) {
-	klog.V(2).Infof("Handlering delete StatefulSet event")
-	sts := obj.(*appsv1.StatefulSet)
-	if !ac.isHorizontalPodAutoscalerOwner(sts.Annotations) {
-		return
-	}
-	hpa, err := ac.extractHPAForStatefulset(sts)
 	if err != nil {
 		return
 	}
