@@ -46,7 +46,7 @@ const (
 
 const (
 	AppsAPIVersion        string = "apps/v1"
-	AutoscalingAPIVersion string = "autoscaling/v2beta2"
+	AutoscalingAPIVersion string = "autoscaling/v2"
 
 	Deployment              string = "Deployment"
 	StatefulSet             string = "StatefulSet"

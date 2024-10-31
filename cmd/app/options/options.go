@@ -84,7 +84,7 @@ const (
 	RenewDeadline = 10
 	RetryPeriod   = 2
 
-	ResourceLock      = "endpointsleases"
+	ResourceLock      = "leases"
 	ResourceName      = "kubez-autoscaler-manager"
 	ResourceNamespace = "kube-system"
 

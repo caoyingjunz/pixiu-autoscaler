@@ -23,7 +23,7 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
-	autoscalingv2 "k8s.io/api/autoscaling/v2beta2"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,12 +31,12 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	appsinformers "k8s.io/client-go/informers/apps/v1"
-	autoscalinginformers "k8s.io/client-go/informers/autoscaling/v2beta2"
+	autoscalinginformers "k8s.io/client-go/informers/autoscaling/v2"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
 	appslisters "k8s.io/client-go/listers/apps/v1"
-	autoscalinglisters "k8s.io/client-go/listers/autoscaling/v2beta2"
+	autoscalinglisters "k8s.io/client-go/listers/autoscaling/v2"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -210,7 +210,7 @@ func (ac *AutoscalerController) syncAutoscalers(hpa *autoscalingv2.HorizontalPod
 			return nil
 		}
 
-		if _, err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(hpa.Namespace).Create(context.TODO(), hpa, metav1.CreateOptions{}); err != nil {
+		if _, err = ac.client.AutoscalingV2().HorizontalPodAutoscalers(hpa.Namespace).Create(context.TODO(), hpa, metav1.CreateOptions{}); err != nil {
 			if errors.IsAlreadyExists(err) {
 				ac.queue.Add(controller.PixiuHpaSpec{
 					Event: controller.Update,
@@ -296,7 +296,7 @@ func (ac *AutoscalerController) syncAutoscalers(hpa *autoscalingv2.HorizontalPod
 			return nil
 		}
 
-		if _, err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(newHpa.Namespace).Update(context.TODO(), newHpa, metav1.UpdateOptions{}); err != nil {
+		if _, err = ac.client.AutoscalingV2().HorizontalPodAutoscalers(newHpa.Namespace).Update(context.TODO(), newHpa, metav1.UpdateOptions{}); err != nil {
 			if !errors.IsNotFound(err) {
 				ac.eventRecorder.Eventf(hpa, v1.EventTypeWarning, "FailedUpdateHPA", fmt.Sprintf("Failed to Recover update HPA %s/%s", hpa.Namespace, hpa.Name))
 				return err
