@@ -66,8 +66,6 @@ type AutoscalerController struct {
 
 	// dListerSynced returns true if the Deployment store has been synced at least once.
 	dListerSynced cache.InformerSynced
-	// sListerSynced returns true if the StatefulSet store has been synced at least once.
-	sListerSynced cache.InformerSynced
 	// hpaListerSynced returns true if the HPA store has been synced at least once.
 	hpaListerSynced cache.InformerSynced
 
@@ -136,7 +134,7 @@ func (ac *AutoscalerController) Run(workers int, stopCh <-chan struct{}) {
 	defer klog.Infof("Shutting down Pixiu Autoscaler Controller")
 
 	// Wait for all involved caches to be synced, before processing items from the queue is started
-	if !cache.WaitForNamedCacheSync("pixiu-autoscaler-manager", stopCh, ac.dListerSynced, ac.sListerSynced, ac.hpaListerSynced) {
+	if !cache.WaitForNamedCacheSync("pixiu-autoscaler-manager", stopCh, ac.dListerSynced, ac.hpaListerSynced) {
 		return
 	}
 
