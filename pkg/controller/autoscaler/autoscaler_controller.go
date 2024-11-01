@@ -137,6 +137,7 @@ func (ac *AutoscalerController) Run(workers int, stopCh <-chan struct{}) {
 	if !cache.WaitForNamedCacheSync("pixiu-autoscaler-manager", stopCh, ac.dListerSynced, ac.hpaListerSynced) {
 		return
 	}
+
 	for i := 0; i < workers; i++ {
 		go wait.Until(ac.worker, time.Second, stopCh)
 	}
