@@ -170,7 +170,7 @@ func getMetricTarget(metricName string) (string, string, error) {
 		return "", "", fmt.Errorf("invalied metric item %s", metricName)
 	}
 	metricType := metricTypeSlice[0]
-	if metricType != cpu && metricType != memory {
+	if metricType != cpu && metricType != memory && metricType != prometheus {
 		return "", "", fmt.Errorf("unsupprted metric resource name: %s", metricType)
 	}
 
@@ -184,13 +184,16 @@ func getMetricTarget(metricName string) (string, string, error) {
 
 func parseMetricSpecs(annotations map[string]string) ([]autoscalingv2.MetricSpec, error) {
 	metricSpecs := make([]autoscalingv2.MetricSpec, 0)
-
-	for metricName, metricValue := range annotations {
+	var metricName string
+	for annotationName, annotationValue := range annotations {
+		if annotationName == prometheusMetricName {
+			metricName = annotationValue
+		}
 		// let it go if annotation item are not the target
-		if !strings.Contains(metricName, PixiuDot+PixiuRootPrefix) {
+		if !strings.Contains(annotationName, PixiuDot+PixiuRootPrefix) {
 			continue
 		}
-		metricType, target, err := getMetricTarget(metricName)
+		metricType, target, err := getMetricTarget(annotationName)
 		if err != nil {
 			return nil, err
 		}
@@ -198,7 +201,7 @@ func parseMetricSpecs(annotations map[string]string) ([]autoscalingv2.MetricSpec
 		var metricSpec autoscalingv2.MetricSpec
 		switch target {
 		case targetAverageUtilization:
-			averageUtilization, err := extractAverageUtilization(metricValue)
+			averageUtilization, err := extractAverageUtilization(annotationValue)
 			if err != nil {
 				return nil, err
 			}
@@ -212,9 +215,8 @@ func parseMetricSpecs(annotations map[string]string) ([]autoscalingv2.MetricSpec
 					},
 				},
 			}
-
 		case targetAverageValue:
-			averageValue, err := resource.ParseQuantity(metricValue)
+			averageValue, err := resource.ParseQuantity(annotationValue)
 			if err != nil {
 				return nil, err
 			}
@@ -235,6 +237,28 @@ func parseMetricSpecs(annotations map[string]string) ([]autoscalingv2.MetricSpec
 			metricSpec.Resource.Name = v1.ResourceCPU
 		case memory:
 			metricSpec.Resource.Name = v1.ResourceMemory
+		case prometheus:
+			averageValue, err := resource.ParseQuantity(annotationValue)
+			if err != nil {
+				return nil, err
+			}
+			metricSpec = autoscalingv2.MetricSpec{
+				Type: autoscalingv2.PodsMetricSourceType,
+				Pods: &autoscalingv2.PodsMetricSource{
+					Metric: autoscalingv2.MetricIdentifier{
+						Name: metricName,
+					},
+					Target: autoscalingv2.MetricTarget{
+						AverageValue: &averageValue,
+					},
+				},
+			}
+			switch target {
+			case targetAverageUtilization:
+				metricSpec.Pods.Target.Type = autoscalingv2.UtilizationMetricType
+			case targetAverageValue:
+				metricSpec.Pods.Target.Type = autoscalingv2.AverageValueMetricType
+			}
 		}
 
 		metricSpecs = append(metricSpecs, metricSpec)
@@ -300,7 +324,7 @@ func extractAverageUtilization(averageUtilization string) (int32, error) {
 	if err != nil {
 		return 0, err
 	}
-	if value64 <= 0 && value64 > 100 {
+	if value64 <= 0 {
 		return 0, fmt.Errorf("averageUtilization should be range 1 between 100")
 	}
 
@@ -313,7 +337,7 @@ type Empty struct{}
 
 func NewItems() map[string]Empty {
 	items := make(map[string]Empty)
-	for _, k := range []string{cpuAverageUtilization, memoryAverageUtilization, cpuAverageValue, memoryAverageValue} {
+	for _, k := range []string{cpuAverageUtilization, memoryAverageUtilization, prometheusAverageUtilization, prometheusAverageValue, cpuAverageValue, memoryAverageValue} {
 		items[k] = Empty{}
 	}
 
