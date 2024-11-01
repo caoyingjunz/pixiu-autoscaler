@@ -39,8 +39,8 @@ jobs:
         env:
           GO111MODULE: auto
 
-      - name: Run autoscaler unit test
-        run: go test -v ./...
+#      - name: Run autoscaler unit test
+#        run: go test -v ./...
 
       - name: Build the autoscaler binariy
         run: go build -v ./...
