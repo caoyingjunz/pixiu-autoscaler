@@ -5,7 +5,7 @@ on:
   - pull_request
 
 env:
-  GO_VERSION: '1.16'
+  GO_VERSION: '1.17.5'
 
 jobs:
   markdown-lint:
@@ -39,8 +39,8 @@ jobs:
         env:
           GO111MODULE: auto
 
-#      - name: Run autoscaler unit test
-#        run: go test -v ./...
+      - name: Run autoscaler unit test
+        run: go test -v ./...
 
       - name: Build the autoscaler binariy
         run: go build -v ./...
