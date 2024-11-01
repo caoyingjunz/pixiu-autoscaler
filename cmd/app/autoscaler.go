@@ -109,7 +109,7 @@ func Run(c *config.PixiuConfiguration) error {
 
 		ac, err := autoscaler.NewAutoscalerController(
 			pixiuCtx.InformerFactory.Apps().V1().Deployments(),
-			pixiuCtx.InformerFactory.Autoscaling().V2beta2().HorizontalPodAutoscalers(),
+			pixiuCtx.InformerFactory.Autoscaling().V2().HorizontalPodAutoscalers(),
 			clientBuilder.ClientOrDie("shared-informers"),
 		)
 		if err != nil {
