@@ -37,5 +37,5 @@ jobs:
           username: ${{ secrets.DOCKER_NAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build and push dashboard image
-        run: make push-image
+      - name: Build and push image
+        run: make image && make push-image
