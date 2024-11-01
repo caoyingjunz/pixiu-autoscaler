@@ -1,8 +1,10 @@
 name: Tests
 
 on:
-  - push
-  - pull_request
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
 
 env:
   GO_VERSION: '1.17.5'
