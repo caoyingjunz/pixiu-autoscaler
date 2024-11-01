@@ -1,5 +1,5 @@
 # Build the manager binary
-FROM golang:1.15-alpine3.12 AS builder
+FROM golang:1.17 AS builder
 ARG GOPROXY
 WORKDIR /go/pixiu-autoscaler
 COPY . .
