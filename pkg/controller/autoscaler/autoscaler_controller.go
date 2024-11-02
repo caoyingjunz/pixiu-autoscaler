@@ -331,55 +331,6 @@ func (ac *AutoscalerController) enqueue1(deployment *appsv1.Deployment) {
 	ac.queue.Add(key)
 }
 
-func (ac *AutoscalerController) addHPA(obj interface{}) {
-	hpa := obj.(*autoscalingv2.HorizontalPodAutoscaler)
-	if !controller.ManageByPixiuController(hpa) {
-		return
-	}
-
-	klog.V(0).Infof("Adding HPA(manager by pixiu) %s/%s", hpa.Namespace, hpa.Name)
-	ac.queue.Add(controller.PixiuHpaSpec{
-		Event: controller.Add,
-		Hpa:   hpa,
-	})
-}
-
-// updateHPA figures out what HPA(s) is updated and wake them up. old and cur must be *autoscalingv2.HorizontalPodAutoscaler types.
-func (ac *AutoscalerController) updateHPA(old, cur interface{}) {
-	oldHPA := old.(*autoscalingv2.HorizontalPodAutoscaler)
-	curHPA := cur.(*autoscalingv2.HorizontalPodAutoscaler)
-
-	// Periodic resync will send update events for all known HPAs.
-	// Two different versions of the same HPA will always have different ResourceVersions.
-	if oldHPA.ResourceVersion == curHPA.ResourceVersion {
-		return
-	}
-
-	if !controller.ManageByPixiuController(oldHPA) && !controller.ManageByPixiuController(curHPA) {
-		return
-	}
-
-	klog.V(0).Infof("Updating HPA %s/%s", oldHPA.Namespace, oldHPA.Name)
-	ac.queue.Add(controller.PixiuHpaSpec{
-		Event: controller.Update,
-		Hpa:   curHPA,
-	})
-}
-
-func (ac *AutoscalerController) deleteHPA(obj interface{}) {
-	hpa := obj.(*autoscalingv2.HorizontalPodAutoscaler)
-	// TODO: rename the manager func
-	if !controller.ManageByPixiuController(hpa) {
-		return
-	}
-
-	klog.V(0).Infof("Deleting HPA %s/%s", hpa.Namespace, hpa.Name)
-	ac.queue.Add(controller.PixiuHpaSpec{
-		Event: controller.Update,
-		Hpa:   hpa,
-	})
-}
-
 // worker runs a worker thread that just dequeues items, processes then, and marks them done.
 func (ac *AutoscalerController) worker() {
 	for ac.processNextWorkItem() {
@@ -448,6 +399,91 @@ func (ac *AutoscalerController) deleteDeployment(obj interface{}) {
 	}
 	klog.V(4).InfoS("Deleting deployment", "deployment", klog.KObj(d))
 	ac.enqueueDeployment(d)
+}
+
+func (ac *AutoscalerController) addHPA(obj interface{}) {
+	hpa := obj.(*autoscalingv2.HorizontalPodAutoscaler)
+
+	if hpa.DeletionTimestamp != nil {
+		// 重启控制器会中断原先删除过程，存在删除标识则继续删除
+		ac.deleteHPA(hpa)
+		return
+	}
+
+	// 如果存在 OwnerReference， 则直接获取上级资源
+	if controllerRef := metav1.GetControllerOf(hpa); controllerRef != nil {
+		d := ac.resolveControllerRef(hpa.Namespace, controllerRef)
+		if d == nil {
+			return
+		}
+		klog.V(4).InfoS("HPA added", "hpa", klog.KObj(hpa))
+		ac.enqueueDeployment(d)
+		return
+	}
+
+}
+
+// updateHPA figures out what HPA(s) is updated and wake them up. old and cur must be *autoscalingv2.HorizontalPodAutoscaler types.
+func (ac *AutoscalerController) updateHPA(old, cur interface{}) {
+	oldHPA := old.(*autoscalingv2.HorizontalPodAutoscaler)
+	curHPA := cur.(*autoscalingv2.HorizontalPodAutoscaler)
+
+	// Periodic resync will send update events for all known HPAs.
+	// Two different versions of the same HPA will always have different ResourceVersions.
+	if oldHPA.ResourceVersion == curHPA.ResourceVersion {
+		return
+	}
+
+	if !controller.ManageByPixiuController(oldHPA) && !controller.ManageByPixiuController(curHPA) {
+		return
+	}
+
+	klog.V(0).Infof("Updating HPA %s/%s", oldHPA.Namespace, oldHPA.Name)
+	ac.queue.Add(controller.PixiuHpaSpec{
+		Event: controller.Update,
+		Hpa:   curHPA,
+	})
+}
+
+func (ac *AutoscalerController) deleteHPA(obj interface{}) {
+	hpa, ok := obj.(*autoscalingv2.HorizontalPodAutoscaler)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
+			return
+		}
+		hpa, ok = tombstone.Obj.(*autoscalingv2.HorizontalPodAutoscaler)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a HorizontalPodAutoscaler %#v", obj))
+			return
+		}
+	}
+
+	controllerRef := metav1.GetControllerOf(hpa)
+	if controllerRef == nil {
+		return
+	}
+	d := ac.resolveControllerRef(hpa.Namespace, controllerRef)
+	if d == nil {
+		return
+	}
+	klog.V(0).Infof("Deleting HPA %s/%s", hpa.Namespace, hpa.Name)
+	ac.enqueueDeployment(d)
+}
+
+func (ac *AutoscalerController) resolveControllerRef(namespace string, controllerRef *metav1.OwnerReference) *appsv1.Deployment {
+	if controllerRef.Kind != "Deployment" {
+		return nil
+	}
+	d, err := ac.dLister.Deployments(namespace).Get(controllerRef.Name)
+	if err != nil {
+		return nil
+	}
+	if d.UID != controllerRef.UID {
+		return nil
+	}
+	return d
 }
 
 // extractHPAForDeployment returns the deployment managed by the given deployment.
