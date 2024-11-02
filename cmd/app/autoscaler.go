@@ -166,7 +166,7 @@ func Run(c *config.PixiuConfiguration) error {
 			},
 		},
 		//WatchDog: electionChecker,
-		Name: "pixiu-autoscaler-manager",
+		Name: "pixiu-autoscaler-controller",
 	})
 	panic("unreachable")
 

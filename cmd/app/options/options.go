@@ -34,8 +34,8 @@ import (
 )
 
 const (
-	// KubezControllerManagerUserAgent is the userAgent name when starting kubez-autoscaler managers.
-	KubezControllerManagerUserAgent = "pixiu-autoscaler-manager"
+	// PixiuControllerManagerUserAgent is the userAgent name when starting pixiu-autoscaler managers.
+	PixiuControllerManagerUserAgent = "pixiu-autoscaler-controller"
 )
 
 // Options has all the params needed to run a Autoscaler
@@ -85,7 +85,7 @@ const (
 	RetryPeriod   = 2
 
 	ResourceLock      = "endpointsleases"
-	ResourceName      = "kubez-autoscaler-manager"
+	ResourceName      = "pixiu-autoscaler-controller"
 	ResourceNamespace = "kube-system"
 
 	HealthzHost = "127.0.0.1"
@@ -157,7 +157,7 @@ func (o *Options) Config() (*config.PixiuConfiguration, error) {
 	}
 
 	client := clientBuilder.ClientOrDie("leader-client")
-	eventRecorder := createRecorder(client, KubezControllerManagerUserAgent)
+	eventRecorder := createRecorder(client, PixiuControllerManagerUserAgent)
 
 	le := config.PixiuLeaderElectionConfiguration{
 		componentbaseconfig.LeaderElectionConfiguration{
