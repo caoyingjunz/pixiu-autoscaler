@@ -428,21 +428,26 @@ func (ac *AutoscalerController) updateHPA(old, cur interface{}) {
 	oldHPA := old.(*autoscalingv2.HorizontalPodAutoscaler)
 	curHPA := cur.(*autoscalingv2.HorizontalPodAutoscaler)
 
-	// Periodic resync will send update events for all known HPAs.
 	// Two different versions of the same HPA will always have different ResourceVersions.
 	if oldHPA.ResourceVersion == curHPA.ResourceVersion {
 		return
 	}
 
-	if !controller.ManageByPixiuController(oldHPA) && !controller.ManageByPixiuController(curHPA) {
-		return
+	curControllerRef := metav1.GetControllerOf(curHPA)
+	oldControllerRef := metav1.GetControllerOf(oldHPA)
+	controllerRefChanged := !reflect.DeepEqual(curControllerRef, oldControllerRef)
+	if controllerRefChanged && oldControllerRef != nil {
+		// hpa 的 ControllerRef 发生了变化，同步老的 controller
+		if d := ac.resolveControllerRef(oldHPA.Namespace, oldControllerRef); d != nil {
+			ac.enqueueDeployment(d)
+		}
 	}
 
-	klog.V(0).Infof("Updating HPA %s/%s", oldHPA.Namespace, oldHPA.Name)
-	ac.queue.Add(controller.PixiuHpaSpec{
-		Event: controller.Update,
-		Hpa:   curHPA,
-	})
+	if curControllerRef != nil {
+		if d := ac.resolveControllerRef(curHPA.Namespace, curControllerRef); d != nil {
+			ac.enqueueDeployment(d)
+		}
+	}
 }
 
 func (ac *AutoscalerController) deleteHPA(obj interface{}) {
