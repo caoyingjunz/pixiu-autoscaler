@@ -134,7 +134,7 @@ func (ac *AutoscalerController) Run(workers int, stopCh <-chan struct{}) {
 	defer klog.Infof("Shutting down Pixiu Autoscaler Controller")
 
 	// Wait for all involved caches to be synced, before processing items from the queue is started
-	if !cache.WaitForNamedCacheSync("pixiu-autoscaler-manager", stopCh, ac.dListerSynced, ac.hpaListerSynced) {
+	if !cache.WaitForNamedCacheSync("pixiu-autoscaler-controller", stopCh, ac.dListerSynced, ac.hpaListerSynced) {
 		return
 	}
 
