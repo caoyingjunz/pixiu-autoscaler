@@ -28,7 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	appsinformers "k8s.io/client-go/informers/apps/v1"
@@ -174,34 +173,6 @@ func (ac *AutoscalerController) IsDeploymentControlHPA(d *appsv1.Deployment) boo
 	return fdReplicas && fdTarget
 }
 
-// To ensure whether we need to maintain the HPA
-func (ac *AutoscalerController) isHorizontalPodAutoscalerOwner(annotations map[string]string) bool {
-	if annotations == nil {
-		return false
-	}
-
-	var fdTarget, fdReplicas bool
-	for anno := range annotations {
-		if !fdReplicas {
-			if anno == controller.MaxReplicas {
-				fdReplicas = true
-			}
-		}
-		if !fdTarget {
-			_, found := ac.items[anno]
-			if found {
-				fdTarget = true
-			}
-		}
-
-		if fdReplicas && fdTarget {
-			return true
-		}
-	}
-
-	return fdReplicas && fdTarget
-}
-
 // syncAutoscaler will sync the autoscaler with the given key.
 // This function is not meant to be invoked concurrently with the same key.
 func (ac *AutoscalerController) syncAutoscalers(key string) error {
@@ -315,130 +286,6 @@ func (ac *AutoscalerController) getHPAsForDeployment(d *appsv1.Deployment) ([]*a
 	}
 
 	return wanted, nil
-}
-
-func (ac *AutoscalerController) syncAutoscalers1(hpa *autoscalingv2.HorizontalPodAutoscaler, event controller.Event) error {
-	startTime := time.Now()
-	klog.V(4).InfoS("Started syncing pixiu autoscaler", "pixiuautoscaler", "startTime", startTime)
-	defer func() {
-		klog.V(4).InfoS("Finished syncing pixiu autoscaler", "pixiuautoscaler", "duration", time.Since(startTime))
-	}()
-
-	var err error
-
-	switch event {
-	case controller.Add:
-		_, err = ac.hpaLister.HorizontalPodAutoscalers(hpa.Namespace).Get(hpa.Name)
-		if err == nil {
-			// Since the hpa already exists, we should try to updated it.
-			ac.queue.Add(controller.PixiuHpaSpec{
-				Event: controller.Update,
-				Hpa:   hpa,
-			})
-			return nil
-		}
-
-		if _, err = ac.client.AutoscalingV2().HorizontalPodAutoscalers(hpa.Namespace).Create(context.TODO(), hpa, metav1.CreateOptions{}); err != nil {
-			if errors.IsAlreadyExists(err) {
-				ac.queue.Add(controller.PixiuHpaSpec{
-					Event: controller.Update,
-					Hpa:   hpa,
-				})
-				return nil
-			}
-
-			ac.eventRecorder.Eventf(hpa, v1.EventTypeWarning, "FailedCreateHPA", fmt.Sprintf("Failed to create HPA %s/%s: %v", hpa.Namespace, hpa.Name, err))
-			return err
-		}
-		ac.eventRecorder.Eventf(hpa, v1.EventTypeNormal, "CreateHPA", fmt.Sprintf("Create HPA %s/%s success", hpa.Namespace, hpa.Name))
-	case controller.Update:
-		var annotations map[string]string
-		var uid types.UID
-
-		kind := hpa.Spec.ScaleTargetRef.Kind
-		switch kind {
-		case controller.Deployment:
-			d, err := ac.dLister.Deployments(hpa.Namespace).Get(hpa.Name)
-			if err != nil {
-				if errors.IsNotFound(err) {
-					ac.queue.Add(controller.PixiuHpaSpec{
-						Event: controller.Delete,
-						Hpa:   hpa,
-					})
-				}
-
-				return err
-			}
-			// check
-			if !controller.IsOwnerReference(d.UID, hpa.OwnerReferences) {
-				return nil
-			}
-
-			uid = d.UID
-			annotations = d.Annotations
-		}
-		if !ac.isHorizontalPodAutoscalerOwner(annotations) {
-			return nil
-		}
-
-		newHpa, err := controller.CreateHorizontalPodAutoscaler(hpa.Name, hpa.Namespace, uid, controller.AppsAPIVersion, kind, annotations)
-		if err != nil {
-			ac.eventRecorder.Eventf(hpa, v1.EventTypeWarning, "FailedNewestHPA", fmt.Sprintf("Failed extract newest HPA %s/%s", hpa.Namespace, hpa.Name))
-			return err
-		}
-
-		curHpa, err := ac.hpaLister.HorizontalPodAutoscalers(hpa.Namespace).Get(hpa.Name)
-		if err != nil {
-			if !errors.IsNotFound(err) {
-				ac.eventRecorder.Eventf(hpa, v1.EventTypeWarning, "FailedGetHPA", fmt.Sprintf("Failed to get current HPA %s/%s", hpa.Namespace, hpa.Name))
-				return err
-			}
-
-			// Since the hpa not exists, we should try to add it.
-			ac.queue.Add(controller.PixiuHpaSpec{
-				Event: controller.Add,
-				Hpa:   newHpa,
-			})
-			return nil
-		}
-
-		// To ensure whether need to updated the hpa
-		if reflect.DeepEqual(curHpa.Spec, newHpa.Spec) {
-			klog.V(0).Infof("HPA: %s/%s spec is not changed, no need to updated", hpa.Namespace, hpa.Name)
-			return nil
-		}
-
-		if _, err = ac.client.AutoscalingV2().HorizontalPodAutoscalers(newHpa.Namespace).Update(context.TODO(), newHpa, metav1.UpdateOptions{}); err != nil {
-			if !errors.IsNotFound(err) {
-				ac.eventRecorder.Eventf(hpa, v1.EventTypeWarning, "FailedUpdateHPA", fmt.Sprintf("Failed to Recover update HPA %s/%s", hpa.Namespace, hpa.Name))
-				return err
-
-				// Since the hpa not exists, we should try to add it.
-				ac.queue.Add(controller.PixiuHpaSpec{
-					Event: controller.Add,
-					Hpa:   newHpa,
-				})
-			}
-
-			return nil
-		}
-
-		ac.eventRecorder.Eventf(hpa, v1.EventTypeNormal, "UpdateHPA", fmt.Sprintf("Update HPA %s/%ssuccess", hpa.Namespace, hpa.Name))
-	case controller.Delete:
-		if err = ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(hpa.Namespace).Delete(context.TODO(), hpa.Name, metav1.DeleteOptions{}); err != nil {
-			if !errors.IsNotFound(err) {
-				ac.eventRecorder.Eventf(hpa, v1.EventTypeWarning, "FailedDeleteHPA", fmt.Sprintf("Failed to delete HPA %s/%s", hpa.Namespace, hpa.Name))
-				return err
-			}
-
-			ac.eventRecorder.Eventf(hpa, v1.EventTypeWarning, "DeleteNotExistHPA", fmt.Sprintf("Create exist HPA %s/%s", hpa.Namespace, hpa.Name))
-			return nil
-		}
-
-		ac.eventRecorder.Eventf(hpa, v1.EventTypeNormal, "DeleteHPA", fmt.Sprintf("Delete HPA %s/%s success", hpa.Namespace, hpa.Name))
-	}
-
-	return nil
 }
 
 func (ac *AutoscalerController) enqueue(deployment *appsv1.Deployment) {
@@ -606,13 +453,4 @@ func (ac *AutoscalerController) resolveControllerRef(namespace string, controlle
 		return nil
 	}
 	return d
-}
-
-// extractHPAForDeployment returns the deployment managed by the given deployment.
-func (ac *AutoscalerController) extractHPAForDeployment(d *appsv1.Deployment) (*autoscalingv2.HorizontalPodAutoscaler, error) {
-	if !ac.isHorizontalPodAutoscalerOwner(d.Annotations) {
-		return nil, nil
-	}
-
-	return controller.CreateHorizontalPodAutoscaler(d.Name, d.Namespace, d.UID, controller.AppsAPIVersion, controller.Deployment, d.Annotations)
 }

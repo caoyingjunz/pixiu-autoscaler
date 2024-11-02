@@ -18,10 +18,10 @@ package controller
 
 import (
 	"fmt"
-	appsv1 "k8s.io/api/apps/v1"
 	"strconv"
 	"strings"
 
+	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -80,29 +80,6 @@ func (b SimpleControllerClientBuilder) ClientOrDie(name string) clientset.Interf
 	return client
 }
 
-// AutoscalerContext is responsible for kubernetes resources stored.
-type AutoscalerContext struct {
-	Name        string            `json:"name"`
-	Namespace   string            `json:"namespace"`
-	APIVersion  string            `json:"api_version"`
-	Kind        string            `json:"kind"`
-	UID         types.UID         `json:"uid"`
-	Annotations map[string]string `json:"annotations"`
-}
-
-type Event string
-
-const (
-	Add    Event = "add"
-	Update Event = "update"
-	Delete Event = "delete"
-)
-
-type PixiuHpaSpec struct {
-	Event Event
-	Hpa   *autoscalingv2.HorizontalPodAutoscaler
-}
-
 func CreateHPAFromDeployment(d *appsv1.Deployment) (*autoscalingv2.HorizontalPodAutoscaler, error) {
 	annotations := d.GetAnnotations()
 	name := d.GetName()
@@ -110,67 +87,6 @@ func CreateHPAFromDeployment(d *appsv1.Deployment) (*autoscalingv2.HorizontalPod
 	uid := d.GetUID()
 	apiVersion := AppsAPIVersion
 	kind := Deployment
-
-	minReplicas, err := extractReplicas(annotations, MinReplicas)
-	if err != nil {
-		return nil, fmt.Errorf("extract minReplicas from annotations failed: %v", err)
-	}
-	maxReplicas, err := extractReplicas(annotations, MaxReplicas)
-	if err != nil {
-		return nil, fmt.Errorf("extract maxReplicas from annotations failed: %v", err)
-	}
-
-	metrics, err := parseMetricSpecs(annotations)
-	if err != nil {
-		return nil, fmt.Errorf("parse metric specs from annotations failed: %v", err)
-	}
-
-	controller := true
-	blockOwnerDeletion := true
-	// Inject ownerReference label
-	ownerReference := metav1.OwnerReference{
-		APIVersion:         apiVersion,
-		Kind:               kind,
-		Name:               name,
-		UID:                uid,
-		Controller:         &controller,
-		BlockOwnerDeletion: &blockOwnerDeletion,
-	}
-
-	spec := autoscalingv2.HorizontalPodAutoscalerSpec{
-		MinReplicas: utilpointer.Int32Ptr(minReplicas),
-		MaxReplicas: maxReplicas,
-		ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
-			APIVersion: apiVersion,
-			Kind:       kind,
-			Name:       name,
-		},
-		Metrics: metrics,
-	}
-
-	return &autoscalingv2.HorizontalPodAutoscaler{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       HorizontalPodAutoscaler,
-			APIVersion: AutoscalingAPIVersion,
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				ownerReference,
-			},
-		},
-		Spec: spec,
-	}, nil
-}
-
-func CreateHorizontalPodAutoscaler(
-	name string,
-	namespace string,
-	uid types.UID,
-	apiVersion string,
-	kind string,
-	annotations map[string]string) (*autoscalingv2.HorizontalPodAutoscaler, error) {
 
 	minReplicas, err := extractReplicas(annotations, MinReplicas)
 	if err != nil {
