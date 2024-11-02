@@ -420,7 +420,6 @@ func (ac *AutoscalerController) addHPA(obj interface{}) {
 		ac.enqueueDeployment(d)
 		return
 	}
-
 }
 
 // updateHPA figures out what HPA(s) is updated and wake them up. old and cur must be *autoscalingv2.HorizontalPodAutoscaler types.
@@ -478,7 +477,7 @@ func (ac *AutoscalerController) deleteHPA(obj interface{}) {
 }
 
 func (ac *AutoscalerController) resolveControllerRef(namespace string, controllerRef *metav1.OwnerReference) *appsv1.Deployment {
-	if controllerRef.Kind != "Deployment" {
+	if controllerRef.Kind != controller.Deployment {
 		return nil
 	}
 	d, err := ac.dLister.Deployments(namespace).Get(controllerRef.Name)
