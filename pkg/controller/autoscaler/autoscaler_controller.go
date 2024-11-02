@@ -27,6 +27,7 @@ import (
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -173,6 +174,8 @@ func (ac *AutoscalerController) isHorizontalPodAutoscalerOwner(annotations map[s
 	return fdReplicas && fdTarget
 }
 
+// syncAutoscaler will sync the autoscaler with the given key.
+// This function is not meant to be invoked concurrently with the same key.
 func (ac *AutoscalerController) syncAutoscalers(key string) error {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
@@ -181,12 +184,57 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 	}
 
 	startTime := time.Now()
-	fmt.Println(namespace, name, startTime)
+	klog.V(4).InfoS("Started syncing pixiu autoscaler", "pixiu-autoscaler", "startTime", startTime)
+	defer func() {
+		klog.V(4).InfoS("Finished syncing pixiu autoscaler", "pixiu-autoscaler", "duration", time.Since(startTime))
+	}()
+
+	deployment, err := ac.dLister.Deployments(namespace).Get(name)
+	if errors.IsNotFound(err) {
+		klog.V(2).InfoS("Deployment has been deleted", "deployment", klog.KRef(namespace, name))
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	// 深拷贝，避免缓存被修改
+	d := deployment.DeepCopy()
+	if d.DeletionTimestamp != nil {
+		return nil
+	}
+
+	hpaList, err := ac.getHPAsForDeployment(d)
+	if err != nil {
+		return err
+	}
+	return ac.sync(d, hpaList)
+}
+
+func (ac *AutoscalerController) sync(d *appsv1.Deployment, hpaList []*autoscalingv2.HorizontalPodAutoscaler) error {
 	return nil
 }
 
-// syncAutoscaler will sync the autoscaler with the given key.
-// This function is not meant to be invoked concurrently with the same key.
+func (ac *AutoscalerController) getHPAsForDeployment(d *appsv1.Deployment) ([]*autoscalingv2.HorizontalPodAutoscaler, error) {
+	hpaList, err := ac.hpaLister.HorizontalPodAutoscalers(d.Namespace).List(labels.Everything())
+	if err != nil {
+		return nil, err
+	}
+
+	var wanted []*autoscalingv2.HorizontalPodAutoscaler
+	for _, hpa := range hpaList {
+		controllerRef := metav1.GetControllerOf(hpa)
+		if controllerRef == nil {
+			continue
+		}
+		if d.UID == controllerRef.UID && controllerRef.Kind == controller.Deployment && controllerRef.Name == d.Name {
+			wanted = append(wanted, hpa)
+		}
+	}
+
+	return wanted, nil
+}
+
 func (ac *AutoscalerController) syncAutoscalers1(hpa *autoscalingv2.HorizontalPodAutoscaler, event controller.Event) error {
 	startTime := time.Now()
 	klog.V(4).InfoS("Started syncing pixiu autoscaler", "pixiuautoscaler", "startTime", startTime)
