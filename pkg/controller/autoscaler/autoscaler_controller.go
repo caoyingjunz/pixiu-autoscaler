@@ -59,6 +59,9 @@ type AutoscalerController struct {
 	syncHandler       func(hpaObj *autoscalingv2.HorizontalPodAutoscaler, event controller.Event) error
 	enqueueAutoscaler func(hpaSpec controller.PixiuHpaSpec)
 
+	syncHandler1      func(dKey string) error
+	enqueueDeployment func(deployment *appsv1.Deployment)
+
 	// dLister can list/get deployments from the shared informer's store
 	dLister appslisters.DeploymentLister
 	// hpaLister is able to list/get HPAs from the shared informer's cache
@@ -119,6 +122,9 @@ func NewAutoscalerController(
 	ac.syncHandler = ac.syncAutoscalers
 	ac.enqueueAutoscaler = ac.enqueue
 
+	ac.syncHandler1 = ac.syncAutoscalers1
+	ac.enqueueDeployment = ac.enqueue1
+
 	ac.dListerSynced = dInformer.Informer().HasSynced
 	ac.hpaListerSynced = hpaInformer.Informer().HasSynced
 
@@ -171,6 +177,18 @@ func (ac *AutoscalerController) isHorizontalPodAutoscalerOwner(annotations map[s
 	}
 
 	return fdReplicas && fdTarget
+}
+
+func (ac *AutoscalerController) syncAutoscalers1(key string) error {
+	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		klog.ErrorS(err, "Failed to split meta namespace cache key", "cacheKey", key)
+		return err
+	}
+
+	startTime := time.Now()
+	fmt.Println(namespace, name, startTime)
+	return nil
 }
 
 // syncAutoscaler will sync the autoscaler with the given key.
@@ -303,6 +321,16 @@ func (ac *AutoscalerController) enqueue(hpaObj controller.PixiuHpaSpec) {
 	ac.queue.Add(hpaObj)
 }
 
+func (ac *AutoscalerController) enqueue1(deployment *appsv1.Deployment) {
+	key, err := controller.KeyFunc(deployment)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", deployment, err))
+		return
+	}
+
+	ac.queue.Add(key)
+}
+
 func (ac *AutoscalerController) addHPA(obj interface{}) {
 	hpa := obj.(*autoscalingv2.HorizontalPodAutoscaler)
 	if !controller.ManageByPixiuController(hpa) {
@@ -389,6 +417,39 @@ func (ac *AutoscalerController) handleErr(err error, key interface{}) {
 	ac.queue.Forget(key)
 }
 
+// This functions just wrap Handler Deployment Events for improve the readability of codes
+func (ac *AutoscalerController) addDeployment(obj interface{}) {
+	d := obj.(*appsv1.Deployment)
+	klog.V(4).InfoS("Adding deployment", "deployment", klog.KObj(d))
+	ac.enqueueDeployment(d)
+}
+
+func (ac *AutoscalerController) updateDeployment(old, cur interface{}) {
+	oldD := old.(*appsv1.Deployment)
+	curD := cur.(*appsv1.Deployment)
+	klog.V(4).InfoS("Updating deployment", "deployment", klog.KObj(oldD))
+
+	ac.enqueueDeployment(curD)
+}
+
+func (ac *AutoscalerController) deleteDeployment(obj interface{}) {
+	d, ok := obj.(*appsv1.Deployment)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
+			return
+		}
+		d, ok = tombstone.Obj.(*appsv1.Deployment)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a Deployment %#v", obj))
+			return
+		}
+	}
+	klog.V(4).InfoS("Deleting deployment", "deployment", klog.KObj(d))
+	ac.enqueueDeployment(d)
+}
+
 // extractHPAForDeployment returns the deployment managed by the given deployment.
 func (ac *AutoscalerController) extractHPAForDeployment(d *appsv1.Deployment) (*autoscalingv2.HorizontalPodAutoscaler, error) {
 	if !ac.isHorizontalPodAutoscalerOwner(d.Annotations) {
@@ -396,119 +457,4 @@ func (ac *AutoscalerController) extractHPAForDeployment(d *appsv1.Deployment) (*
 	}
 
 	return controller.CreateHorizontalPodAutoscaler(d.Name, d.Namespace, d.UID, controller.AppsAPIVersion, controller.Deployment, d.Annotations)
-}
-
-// This functions just wrap Handler Deployment Events for improve the readability of codes
-func (ac *AutoscalerController) addDeployment(obj interface{}) {
-	d := obj.(*appsv1.Deployment)
-	klog.V(4).InfoS("Adding deployment", "deployment", klog.KObj(d))
-
-	hpa, err := ac.extractHPAForDeployment(d)
-	if err != nil {
-		ac.eventRecorder.Eventf(d, v1.EventTypeWarning, "FailedExtractHPA", fmt.Sprintf("Failed to extract HPA %s/%s from deployment, %v", d.Namespace, d.Name, err))
-		klog.V(0).Infof("Failed to extract HPA %s/%s from deployment, %v", d.Namespace, d.Name, err)
-		return
-	}
-	if hpa == nil {
-		return
-	}
-
-	klog.V(0).Infof("Adding HPA(manager by pixiu) %s/%s", hpa.Namespace, hpa.Name)
-	ac.queue.Add(controller.PixiuHpaSpec{
-		Event: controller.Add,
-		Hpa:   hpa,
-	})
-}
-
-func (ac *AutoscalerController) updateDeployment(old, cur interface{}) {
-	klog.V(2).Infof("Handlering update Deployment event")
-	oldD := old.(*appsv1.Deployment)
-	curD := cur.(*appsv1.Deployment)
-
-	// Periodic resync will send update events for all known Deployments.
-	// Two different versions of the same Deployment will always have different RVs.
-	if oldD.ResourceVersion == curD.ResourceVersion {
-		return
-	}
-
-	// 0. no HPA manger by deployment
-	if !ac.isHorizontalPodAutoscalerOwner(oldD.Annotations) && !ac.isHorizontalPodAutoscalerOwner(curD.Annotations) {
-		return
-	}
-
-	// 1. Add hpa
-	if !ac.isHorizontalPodAutoscalerOwner(oldD.Annotations) && ac.isHorizontalPodAutoscalerOwner(curD.Annotations) {
-		hpa, err := ac.extractHPAForDeployment(curD)
-		if err != nil {
-			// TODO: handler error
-			return
-		}
-		if hpa == nil {
-			return
-		}
-		klog.V(0).Infof("Adding HPA(manager by pixiu) %s/%s", hpa.Namespace, hpa.Name)
-		ac.queue.Add(controller.PixiuHpaSpec{
-			Event: controller.Add,
-			Hpa:   hpa,
-		})
-
-		return
-	}
-
-	// 2. Update HPA
-	if ac.isHorizontalPodAutoscalerOwner(oldD.Annotations) && ac.isHorizontalPodAutoscalerOwner(curD.Annotations) {
-		hpa, err := ac.extractHPAForDeployment(curD)
-		if err != nil {
-			// TODO: handler error
-			return
-		}
-		if hpa == nil {
-			return
-		}
-		klog.V(0).Infof("Updating HPA(manager by pixiu) %s/%s", hpa.Namespace, hpa.Name)
-		ac.queue.Add(controller.PixiuHpaSpec{
-			Event: controller.Update,
-			Hpa:   hpa,
-		})
-
-		return
-	}
-
-	// 3. Delete HPA
-	if ac.isHorizontalPodAutoscalerOwner(oldD.Annotations) && !ac.isHorizontalPodAutoscalerOwner(curD.Annotations) {
-		hpa, err := ac.extractHPAForDeployment(oldD)
-		if err != nil {
-			return
-		}
-		if hpa == nil {
-			return
-		}
-
-		klog.V(0).Infof("Deleting HPA(manager by pixiu) %s/%s", hpa.Namespace, hpa.Name)
-		ac.queue.Add(controller.PixiuHpaSpec{
-			Event: controller.Delete,
-			Hpa:   hpa,
-		})
-	}
-
-	return
-}
-
-func (ac *AutoscalerController) deleteDeployment(obj interface{}) {
-	klog.V(2).Infof("Handlering delete Deployment event")
-	d := obj.(*appsv1.Deployment)
-
-	hpa, err := ac.extractHPAForDeployment(d)
-	if err != nil {
-		return
-	}
-	if hpa == nil {
-		return
-	}
-
-	klog.V(0).Infof("Deletinig HPA(manager by pixiu) %s/%s", hpa.Namespace, hpa.Name)
-	ac.queue.Add(controller.PixiuHpaSpec{
-		Event: controller.Delete,
-		Hpa:   hpa,
-	})
 }
