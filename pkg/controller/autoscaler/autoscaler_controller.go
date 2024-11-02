@@ -146,6 +146,34 @@ func (ac *AutoscalerController) Run(workers int, stopCh <-chan struct{}) {
 	<-stopCh
 }
 
+// IsDeploymentControlHPA 判断 deployment 是否维护 HPA
+func (ac *AutoscalerController) IsDeploymentControlHPA(d *appsv1.Deployment) bool {
+	annotations := d.GetAnnotations()
+	if annotations == nil {
+		return false
+	}
+
+	var fdTarget, fdReplicas bool
+	for annotation := range annotations {
+		if !fdReplicas {
+			if annotation == controller.MaxReplicas {
+				fdReplicas = true
+			}
+		}
+		if !fdTarget {
+			_, found := ac.items[annotation]
+			if found {
+				fdTarget = true
+			}
+		}
+		if fdReplicas && fdTarget {
+			return true
+		}
+	}
+
+	return fdReplicas && fdTarget
+}
+
 // To ensure whether we need to maintain the HPA
 func (ac *AutoscalerController) isHorizontalPodAutoscalerOwner(annotations map[string]string) bool {
 	if annotations == nil {
@@ -212,6 +240,60 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 }
 
 func (ac *AutoscalerController) sync(d *appsv1.Deployment, hpaList []*autoscalingv2.HorizontalPodAutoscaler) error {
+	// 1. deployment 存在，但是 hpa 注释不存在 => 移除已存在的 hpa
+	if !ac.IsDeploymentControlHPA(d) {
+		return ac.deleteHPAsInBatch(hpaList)
+	}
+
+	newHPA, err := controller.CreateHPAFromDeployment(d)
+	if err != nil {
+		ac.eventRecorder.Eventf(d, v1.EventTypeWarning, "FailedNewestHPA", fmt.Sprintf("Failed extract newest HPA %s/%s", d.GetNamespace(), d.GetName()))
+		return err
+	}
+
+	if len(hpaList) == 0 {
+		// 新建
+		_, err = ac.client.AutoscalingV2().HorizontalPodAutoscalers(newHPA.Namespace).Create(context.TODO(), newHPA, metav1.CreateOptions{})
+		if err != nil {
+			ac.eventRecorder.Eventf(newHPA, v1.EventTypeWarning, "FailedCreateHPA", fmt.Sprintf("Failed to create HPA %s/%s: %v", newHPA.Namespace, newHPA.Name, err))
+			return err
+		}
+		ac.eventRecorder.Eventf(newHPA, v1.EventTypeNormal, "CreateHPA", fmt.Sprintf("Create HPA %s/%s success", newHPA.Namespace, newHPA.Name))
+	} else {
+		// 更新 if necessary
+		oldHPA := hpaList[0]
+		if err := ac.deleteHPAsInBatch(hpaList[1:]); err != nil {
+			return err
+		}
+
+		if reflect.DeepEqual(oldHPA.Spec, newHPA.Spec) {
+			klog.V(0).Infof("HPA: %s/%s spec is not changed, no need to updated", newHPA.Namespace, newHPA.Name)
+			return nil
+		}
+		_, err = ac.client.AutoscalingV2().HorizontalPodAutoscalers(newHPA.Namespace).Update(context.TODO(), newHPA, metav1.UpdateOptions{})
+		if !errors.IsNotFound(err) {
+			ac.eventRecorder.Eventf(newHPA, v1.EventTypeWarning, "FailedUpdateHPA", fmt.Sprintf("Failed to Recover update HPA %s/%s", newHPA.Namespace, newHPA.Name))
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (ac *AutoscalerController) deleteHPAsInBatch(hpaList []*autoscalingv2.HorizontalPodAutoscaler) error {
+	if len(hpaList) == 0 {
+		return nil
+	}
+	for _, hpa := range hpaList {
+		if err := ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(hpa.Namespace).Delete(context.TODO(), hpa.Name, metav1.DeleteOptions{}); err != nil {
+			if !errors.IsNotFound(err) {
+				ac.eventRecorder.Eventf(hpa, v1.EventTypeWarning, "FailedDeleteHPA", fmt.Sprintf("Failed to delete HPA %s/%s", hpa.Namespace, hpa.Name))
+				return err
+			}
+		}
+		ac.eventRecorder.Eventf(hpa, v1.EventTypeNormal, "DeleteHPA", fmt.Sprintf("Delete HPA %s/%s", hpa.Namespace, hpa.Name))
+	}
+
 	return nil
 }
 
