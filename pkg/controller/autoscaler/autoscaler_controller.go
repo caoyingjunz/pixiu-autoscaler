@@ -56,10 +56,7 @@ type AutoscalerController struct {
 	client        clientset.Interface
 	eventRecorder record.EventRecorder
 
-	syncHandler       func(hpaObj *autoscalingv2.HorizontalPodAutoscaler, event controller.Event) error
-	enqueueAutoscaler func(hpaSpec controller.PixiuHpaSpec)
-
-	syncHandler1      func(dKey string) error
+	syncHandler       func(dKey string) error
 	enqueueDeployment func(deployment *appsv1.Deployment)
 
 	// dLister can list/get deployments from the shared informer's store
@@ -120,10 +117,7 @@ func NewAutoscalerController(
 
 	// syncAutoscalers
 	ac.syncHandler = ac.syncAutoscalers
-	ac.enqueueAutoscaler = ac.enqueue
-
-	ac.syncHandler1 = ac.syncAutoscalers1
-	ac.enqueueDeployment = ac.enqueue1
+	ac.enqueueDeployment = ac.enqueue
 
 	ac.dListerSynced = dInformer.Informer().HasSynced
 	ac.hpaListerSynced = hpaInformer.Informer().HasSynced
@@ -179,7 +173,7 @@ func (ac *AutoscalerController) isHorizontalPodAutoscalerOwner(annotations map[s
 	return fdReplicas && fdTarget
 }
 
-func (ac *AutoscalerController) syncAutoscalers1(key string) error {
+func (ac *AutoscalerController) syncAutoscalers(key string) error {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		klog.ErrorS(err, "Failed to split meta namespace cache key", "cacheKey", key)
@@ -193,7 +187,7 @@ func (ac *AutoscalerController) syncAutoscalers1(key string) error {
 
 // syncAutoscaler will sync the autoscaler with the given key.
 // This function is not meant to be invoked concurrently with the same key.
-func (ac *AutoscalerController) syncAutoscalers(hpa *autoscalingv2.HorizontalPodAutoscaler, event controller.Event) error {
+func (ac *AutoscalerController) syncAutoscalers1(hpa *autoscalingv2.HorizontalPodAutoscaler, event controller.Event) error {
 	startTime := time.Now()
 	klog.V(4).InfoS("Started syncing pixiu autoscaler", "pixiuautoscaler", "startTime", startTime)
 	defer func() {
@@ -317,11 +311,7 @@ func (ac *AutoscalerController) syncAutoscalers(hpa *autoscalingv2.HorizontalPod
 	return nil
 }
 
-func (ac *AutoscalerController) enqueue(hpaObj controller.PixiuHpaSpec) {
-	ac.queue.Add(hpaObj)
-}
-
-func (ac *AutoscalerController) enqueue1(deployment *appsv1.Deployment) {
+func (ac *AutoscalerController) enqueue(deployment *appsv1.Deployment) {
 	key, err := controller.KeyFunc(deployment)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", deployment, err))
@@ -344,9 +334,7 @@ func (ac *AutoscalerController) processNextWorkItem() bool {
 	}
 	defer ac.queue.Done(key)
 
-	hpaSpec := key.(controller.PixiuHpaSpec)
-
-	err := ac.syncHandler(hpaSpec.Hpa, hpaSpec.Event)
+	err := ac.syncHandler(key.(string))
 	ac.handleErr(err, key)
 	return true
 }
