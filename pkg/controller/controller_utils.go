@@ -108,8 +108,8 @@ func CreateHPAFromDeployment(d *appsv1.Deployment) (*autoscalingv2.HorizontalPod
 	name := d.GetName()
 	namespace := d.GetNamespace()
 	uid := d.GetUID()
-	apiVersion := d.APIVersion
-	kind := d.Kind
+	apiVersion := AppsAPIVersion
+	kind := Deployment
 
 	minReplicas, err := extractReplicas(annotations, MinReplicas)
 	if err != nil {
