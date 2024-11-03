@@ -17,6 +17,8 @@ limitations under the License.
 package controller
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"strconv"
 	"strings"
@@ -125,20 +127,32 @@ func CreateHPAFromDeployment(d *appsv1.Deployment) (*autoscalingv2.HorizontalPod
 		Metrics: metrics,
 	}
 
+	// 生成名称后缀
+	hpaNameHash := computeHash(d.Name)
+
 	return &autoscalingv2.HorizontalPodAutoscaler{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       HorizontalPodAutoscaler,
 			APIVersion: AutoscalingAPIVersion,
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
+			Name:      d.Name + "-" + hpaNameHash,
 			Namespace: namespace,
 			OwnerReferences: []metav1.OwnerReference{
 				ownerReference,
 			},
+			Labels: d.Spec.Selector.MatchLabels,
 		},
 		Spec: spec,
 	}, nil
+}
+
+func computeHash(objectToWrite string) string {
+	hasher := md5.New()
+	hasher.Write([]byte(objectToWrite))
+	hashedData := hex.EncodeToString(hasher.Sum(nil))
+
+	return hashedData[:9]
 }
 
 // Parse and get metric type (valid is cpu and memory) and target
