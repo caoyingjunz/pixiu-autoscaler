@@ -215,6 +215,7 @@ func (ac *AutoscalerController) sync(d *appsv1.Deployment, hpaList []*autoscalin
 	if !ac.IsDeploymentControlHPA(d) {
 		return ac.deleteHPAsInBatch(hpaList)
 	}
+
 	newHPA, err := controller.CreateHPAFromDeployment(d)
 	if err != nil {
 		ac.eventRecorder.Eventf(d, v1.EventTypeWarning, "FailedNewestHPA", fmt.Sprintf("Failed extract newest HPA %s/%s", d.GetNamespace(), d.GetName()))
@@ -247,6 +248,7 @@ func (ac *AutoscalerController) sync(d *appsv1.Deployment, hpaList []*autoscalin
 		}
 		ac.eventRecorder.Eventf(newHPA, v1.EventTypeWarning, "UpdateHPA", fmt.Sprintf("update HPA %s/%s", newHPA.Namespace, newHPA.Name))
 	}
+
 	return nil
 }
 

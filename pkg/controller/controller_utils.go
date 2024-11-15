@@ -103,6 +103,7 @@ func CreateHPAFromDeployment(d *appsv1.Deployment) (*autoscalingv2.HorizontalPod
 	if err != nil {
 		return nil, fmt.Errorf("parse metric specs from annotations failed: %v", err)
 	}
+
 	controller := true
 	blockOwnerDeletion := true
 	// Inject ownerReference label
@@ -208,6 +209,7 @@ func parseMetricSpecs(annotations map[string]string) ([]autoscalingv2.MetricSpec
 					},
 				},
 			}
+
 		case targetAverageValue:
 			averageValue, err := resource.ParseQuantity(annotationValue)
 			if err != nil {
@@ -224,6 +226,7 @@ func parseMetricSpecs(annotations map[string]string) ([]autoscalingv2.MetricSpec
 				},
 			}
 		}
+
 		switch metricType {
 		case cpu:
 			metricSpec.Resource.Name = v1.ResourceCPU
