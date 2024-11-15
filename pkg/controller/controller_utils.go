@@ -316,7 +316,7 @@ func extractAverageUtilization(averageUtilization string) (int32, error) {
 	if err != nil {
 		return 0, err
 	}
-	if value64 <= 0 {
+	if value64 <= 0 && value64 > 100 {
 		return 0, fmt.Errorf("averageUtilization should be range 1 between 100")
 	}
 
