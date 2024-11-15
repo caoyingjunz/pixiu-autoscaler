@@ -29,9 +29,10 @@ const (
 	targetAverageValue       string = "targetAverageValue"
 
 	// TODO: prometheus is not supported for now.
-	cpu        string = "cpu"
-	memory     string = "memory"
-	prometheus string = "prometheus"
+	cpu                  string = "cpu"
+	memory               string = "memory"
+	prometheus           string = "prometheus"
+	prometheusMetricName        = PixiuRootPrefix + PixiuSeparator + "metricName"
 
 	cpuAverageUtilization        = "cpu." + PixiuRootPrefix + PixiuSeparator + targetAverageUtilization
 	memoryAverageUtilization     = "memory." + PixiuRootPrefix + PixiuSeparator + targetAverageUtilization

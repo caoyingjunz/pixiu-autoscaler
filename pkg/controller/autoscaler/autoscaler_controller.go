@@ -85,7 +85,7 @@ func NewAutoscalerController(
 	eventBroadcaster.StartLogging(klog.Infof)
 	eventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: client.CoreV1().Events("")})
 
-	if client != nil && client.CoreV1().RESTClient().GetRateLimiter() != nil {
+	if client.CoreV1().RESTClient().GetRateLimiter() != nil {
 		if err := ratelimiter.RegisterMetricAndTrackRateLimiterUsage("pixiu_autoscaler", client.CoreV1().RESTClient().GetRateLimiter()); err != nil {
 			return nil, err
 		}
@@ -215,7 +215,6 @@ func (ac *AutoscalerController) sync(d *appsv1.Deployment, hpaList []*autoscalin
 	if !ac.IsDeploymentControlHPA(d) {
 		return ac.deleteHPAsInBatch(hpaList)
 	}
-
 	newHPA, err := controller.CreateHPAFromDeployment(d)
 	if err != nil {
 		ac.eventRecorder.Eventf(d, v1.EventTypeWarning, "FailedNewestHPA", fmt.Sprintf("Failed extract newest HPA %s/%s", d.GetNamespace(), d.GetName()))
@@ -241,11 +240,12 @@ func (ac *AutoscalerController) sync(d *appsv1.Deployment, hpaList []*autoscalin
 			klog.V(0).Infof("HPA: %s/%s spec is not changed, no need to updated", newHPA.Namespace, newHPA.Name)
 			return nil
 		}
-		_, err = ac.client.AutoscalingV2().HorizontalPodAutoscalers(newHPA.Namespace).Update(context.TODO(), newHPA, metav1.UpdateOptions{})
-		if !errors.IsNotFound(err) {
+		_, err := ac.client.AutoscalingV2().HorizontalPodAutoscalers(newHPA.Namespace).Update(context.TODO(), newHPA, metav1.UpdateOptions{})
+		if err != nil {
 			ac.eventRecorder.Eventf(newHPA, v1.EventTypeWarning, "FailedUpdateHPA", fmt.Sprintf("Failed to Recover update HPA %s/%s", newHPA.Namespace, newHPA.Name))
 			return err
 		}
+		ac.eventRecorder.Eventf(newHPA, v1.EventTypeWarning, "UpdateHPA", fmt.Sprintf("update HPA %s/%s", newHPA.Namespace, newHPA.Name))
 	}
 
 	return nil
