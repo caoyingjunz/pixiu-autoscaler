@@ -346,6 +346,15 @@ func (ac *AutoscalerController) addDeployment(obj interface{}) {
 func (ac *AutoscalerController) updateDeployment(old, cur interface{}) {
 	oldD := old.(*appsv1.Deployment)
 	curD := cur.(*appsv1.Deployment)
+
+	// Two different versions of the same HPA will always have different ResourceVersions.
+	if oldD.ResourceVersion == curD.ResourceVersion {
+		return
+	}
+	// deployment 的注释未变化，则HPA不变
+	if reflect.DeepEqual(oldD.Annotations, curD.Annotations) {
+		return
+	}
 	klog.V(4).InfoS("Updating deployment", "deployment", klog.KObj(oldD))
 
 	ac.enqueueDeployment(curD)
