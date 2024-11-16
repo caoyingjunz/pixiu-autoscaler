@@ -238,7 +238,7 @@ func (ac *AutoscalerController) sync(d *appsv1.Deployment, hpaList []*autoscalin
 		}
 
 		if reflect.DeepEqual(oldHPA.Spec, newHPA.Spec) {
-			klog.V(0).Infof("HPA: %s/%s is not changed", newHPA.Namespace, newHPA.Name)
+			klog.V(2).Infof("HPA: %s/%s is not changed", newHPA.Namespace, newHPA.Name)
 			return nil
 		}
 		if _, err = ac.client.AutoscalingV2().HorizontalPodAutoscalers(newHPA.Namespace).Update(context.TODO(), newHPA, metav1.UpdateOptions{}); err != nil {
