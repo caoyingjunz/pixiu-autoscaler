@@ -238,14 +238,17 @@ func (ac *AutoscalerController) sync(d *appsv1.Deployment, hpaList []*autoscalin
 		}
 
 		if reflect.DeepEqual(oldHPA.Spec, newHPA.Spec) {
-			klog.V(0).Infof("HPA: %s/%s spec is not changed, no need to updated", newHPA.Namespace, newHPA.Name)
+			klog.V(0).Infof("HPA: %s/%s is not changed", newHPA.Namespace, newHPA.Name)
 			return nil
 		}
-		_, err = ac.client.AutoscalingV2().HorizontalPodAutoscalers(newHPA.Namespace).Update(context.TODO(), newHPA, metav1.UpdateOptions{})
-		if !errors.IsNotFound(err) {
-			ac.eventRecorder.Eventf(newHPA, v1.EventTypeWarning, "FailedUpdateHPA", fmt.Sprintf("Failed to Recover update HPA %s/%s", newHPA.Namespace, newHPA.Name))
-			return err
+		if _, err = ac.client.AutoscalingV2().HorizontalPodAutoscalers(newHPA.Namespace).Update(context.TODO(), newHPA, metav1.UpdateOptions{}); err != nil {
+			if !errors.IsNotFound(err) {
+				ac.eventRecorder.Eventf(newHPA, v1.EventTypeWarning, "FailedUpdateHPA", fmt.Sprintf("Failed to Recover update HPA %s/%s", newHPA.Namespace, newHPA.Name))
+				klog.Errorf("Failed to update HPA %s/%s %v", newHPA.Namespace, newHPA.Name, err)
+				return err
+			}
 		}
+		ac.eventRecorder.Eventf(newHPA, v1.EventTypeNormal, "UpdateHPA", fmt.Sprintf("Update HPA %s/%s success", newHPA.Namespace, newHPA.Name))
 	}
 
 	return nil
@@ -256,7 +259,7 @@ func (ac *AutoscalerController) deleteHPAsInBatch(hpaList []*autoscalingv2.Horiz
 		return nil
 	}
 	for _, hpa := range hpaList {
-		if err := ac.client.AutoscalingV2beta2().HorizontalPodAutoscalers(hpa.Namespace).Delete(context.TODO(), hpa.Name, metav1.DeleteOptions{}); err != nil {
+		if err := ac.client.AutoscalingV2().HorizontalPodAutoscalers(hpa.Namespace).Delete(context.TODO(), hpa.Name, metav1.DeleteOptions{}); err != nil {
 			if !errors.IsNotFound(err) {
 				ac.eventRecorder.Eventf(hpa, v1.EventTypeWarning, "FailedDeleteHPA", fmt.Sprintf("Failed to delete HPA %s/%s", hpa.Namespace, hpa.Name))
 				return err
