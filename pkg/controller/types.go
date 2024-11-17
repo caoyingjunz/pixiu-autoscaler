@@ -32,11 +32,12 @@ const (
 	memory     string = "memory"
 	prometheus string = "prometheus"
 
-	prometheusMetricName = PixiuRootPrefix + PixiuSeparator + "metricName"
-
 	cpuAverageUtilization        = "cpu." + PixiuRootPrefix + PixiuSeparator + targetAverageUtilization
 	memoryAverageUtilization     = "memory." + PixiuRootPrefix + PixiuSeparator + targetAverageUtilization
 	prometheusAverageUtilization = "prometheus." + PixiuRootPrefix + PixiuSeparator + targetAverageUtilization
+
+	// 指标来着 prometheus 时，需要指定指标名称
+	prometheusMetricName = PixiuRootPrefix + PixiuSeparator + "targetCustomMetric"
 
 	// CPU, in cores. (500m = .5 cores)
 	// Memory, in bytes. (500Gi = 500GiB = 500 * 1024 * 1024 * 1024)
