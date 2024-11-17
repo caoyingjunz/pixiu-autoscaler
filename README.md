@@ -34,9 +34,10 @@ metadata:
     ...
     # 可选，默认 minReplicas 为 1
     hpa.caoyingjunz.io/minReplicas: "2"  # MINPODS
-    # 必填
+    # 可选，默认 maxReplicas 为 6
     hpa.caoyingjunz.io/maxReplicas: "6"  # MAXPODS
     ...
+
     # 支持多种 TARGETS 类型，若开启，至少选择一种，可同时支持多个 TARGETS
     # CPU, in cores. (500m = .5 cores)
     # Memory, in bytes. (500Gi = 500GiB = 500 * 1024 * 1024 * 1024)

@@ -264,27 +264,28 @@ func ManageByPixiuController(hpa *autoscalingv2.HorizontalPodAutoscaler) bool {
 }
 
 func extractReplicas(annotations map[string]string, replicasType string) (int32, error) {
-	var Replicas int64
-	var err error
+	var (
+		Replicas string
+		exists   bool
+	)
 	switch replicasType {
 	case MinReplicas:
-		minReplicas, exists := annotations[MinReplicas]
+		Replicas, exists = annotations[MinReplicas]
 		if !exists {
-			// Default minReplicas is 1
-			return 1, nil
-		}
-		if Replicas, err = strconv.ParseInt(minReplicas, 10, 32); err != nil {
-			return 0, err
+			return 1, nil // Default minReplicas is 1
 		}
 	case MaxReplicas:
-		maxReplicas, exists := annotations[MaxReplicas]
+		Replicas, exists = annotations[MaxReplicas]
 		if !exists {
-			return 0, fmt.Errorf("%s is required", MaxReplicas)
+			return 6, nil // Default maxReplicas is 6
 		}
-		Replicas, err = strconv.ParseInt(maxReplicas, 10, 32)
 	}
 
-	return int32(Replicas), err
+	targetReplicas, err := strconv.ParseInt(Replicas, 10, 32)
+	if err != nil {
+		return 0, err
+	}
+	return int32(targetReplicas), err
 }
 
 func extractAverageUtilization(averageUtilization string) (int32, error) {
