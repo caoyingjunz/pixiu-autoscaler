@@ -152,25 +152,14 @@ func (ac *AutoscalerController) IsDeploymentControlHPA(d *appsv1.Deployment) boo
 		return false
 	}
 
-	var fdTarget, fdReplicas bool
 	for annotation := range annotations {
-		if !fdReplicas {
-			if annotation == controller.MaxReplicas {
-				fdReplicas = true
-			}
-		}
-		if !fdTarget {
-			_, found := ac.items[annotation]
-			if found {
-				fdTarget = true
-			}
-		}
-		if fdReplicas && fdTarget {
+		_, found := ac.items[annotation]
+		if found {
 			return true
 		}
 	}
 
-	return fdReplicas && fdTarget
+	return false
 }
 
 // syncAutoscaler will sync the autoscaler with the given key.
