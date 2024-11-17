@@ -232,9 +232,9 @@ func parseMetricSpecs(annotations map[string]string) ([]autoscalingv2.MetricSpec
 			if err != nil {
 				return nil, err
 			}
-			name, ok := annotations[prometheusMetricName]
+			name, ok := annotations[prometheusCustomMetric]
 			if !ok {
-				return nil, fmt.Errorf("failed to get pod metric name")
+				return nil, fmt.Errorf("failed to get targetCustomMetric from annotations")
 			}
 
 			metricSpec = autoscalingv2.MetricSpec{
