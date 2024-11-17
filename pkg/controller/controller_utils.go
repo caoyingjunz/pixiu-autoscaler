@@ -177,17 +177,12 @@ func getMetricTarget(metricName string) (string, string, error) {
 func parseMetricSpecs(annotations map[string]string) ([]autoscalingv2.MetricSpec, error) {
 	metricSpecs := make([]autoscalingv2.MetricSpec, 0)
 
-	var metricName string
-
-	for annotationName, annotationValue := range annotations {
-		if annotationName == prometheusMetricName {
-			metricName = annotationValue
-		}
+	for metricName, metricValue := range annotations {
 		// let it go if annotation item are not the target
-		if !strings.Contains(annotationName, PixiuDot+PixiuRootPrefix) {
+		if !strings.Contains(metricName, PixiuDot+PixiuRootPrefix) {
 			continue
 		}
-		metricType, target, err := getMetricTarget(annotationName)
+		metricType, target, err := getMetricTarget(metricName)
 		if err != nil {
 			return nil, err
 		}
@@ -195,7 +190,7 @@ func parseMetricSpecs(annotations map[string]string) ([]autoscalingv2.MetricSpec
 		var metricSpec autoscalingv2.MetricSpec
 		switch target {
 		case targetAverageUtilization:
-			averageUtilization, err := extractAverageUtilization(annotationValue)
+			averageUtilization, err := extractAverageUtilization(metricValue)
 			if err != nil {
 				return nil, err
 			}
@@ -211,7 +206,7 @@ func parseMetricSpecs(annotations map[string]string) ([]autoscalingv2.MetricSpec
 			}
 
 		case targetAverageValue:
-			averageValue, err := resource.ParseQuantity(annotationValue)
+			averageValue, err := resource.ParseQuantity(metricValue)
 			if err != nil {
 				return nil, err
 			}
@@ -233,15 +228,20 @@ func parseMetricSpecs(annotations map[string]string) ([]autoscalingv2.MetricSpec
 		case memory:
 			metricSpec.Resource.Name = v1.ResourceMemory
 		case prometheus:
-			averageValue, err := resource.ParseQuantity(annotationValue)
+			averageValue, err := resource.ParseQuantity(metricValue)
 			if err != nil {
 				return nil, err
 			}
+			name, ok := annotations[prometheusMetricName]
+			if !ok {
+				return nil, fmt.Errorf("failed to get pod metric name")
+			}
+
 			metricSpec = autoscalingv2.MetricSpec{
 				Type: autoscalingv2.PodsMetricSourceType,
 				Pods: &autoscalingv2.PodsMetricSource{
 					Metric: autoscalingv2.MetricIdentifier{
-						Name: metricName,
+						Name: name,
 					},
 					Target: autoscalingv2.MetricTarget{
 						AverageValue: &averageValue,
