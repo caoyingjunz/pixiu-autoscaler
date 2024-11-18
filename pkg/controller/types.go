@@ -23,12 +23,10 @@ const (
 	PixiuSeparator  string = "/"
 	PixiuDot        string = "."
 
-	MinReplicas                  string = "hpa.caoyingjunz.io/minReplicas"
-	MaxReplicas                  string = "hpa.caoyingjunz.io/maxReplicas"
-	targetAverageUtilization     string = "targetAverageUtilization"
-	targetAverageValue           string = "targetAverageValue"
-	podsTargetAverageUtilization string = "podsTargetAverageUtilization"
-	podsTargetAverageValue       string = "podsTargetAverageValue"
+	MinReplicas              string = "hpa.caoyingjunz.io/minReplicas"
+	MaxReplicas              string = "hpa.caoyingjunz.io/maxReplicas"
+	targetAverageUtilization string = "targetAverageUtilization"
+	targetAverageValue       string = "targetAverageValue"
 
 	cpu        string = "cpu"
 	memory     string = "memory"
@@ -36,10 +34,7 @@ const (
 
 	cpuAverageUtilization        = "cpu." + PixiuRootPrefix + PixiuSeparator + targetAverageUtilization
 	memoryAverageUtilization     = "memory." + PixiuRootPrefix + PixiuSeparator + targetAverageUtilization
-	prometheusAverageUtilization = "prometheus." + PixiuRootPrefix + PixiuSeparator + podsTargetAverageUtilization
-
-	// When the metrics come from Prometheus, the metric name needs to be specified.
-	prometheusCustomMetric = PixiuRootPrefix + PixiuSeparator + "targetCustomMetric"
+	prometheusAverageUtilization = "prometheus." + PixiuRootPrefix + PixiuSeparator + targetAverageUtilization
 
 	// 指标来着 prometheus 时，需要指定指标名称
 	prometheusCustomMetric = PixiuRootPrefix + PixiuSeparator + "targetCustomMetric"
@@ -48,7 +43,7 @@ const (
 	// Memory, in bytes. (500Gi = 500GiB = 500 * 1024 * 1024 * 1024)
 	cpuAverageValue        = "cpu." + PixiuRootPrefix + PixiuSeparator + targetAverageValue
 	memoryAverageValue     = "memory." + PixiuRootPrefix + PixiuSeparator + targetAverageValue
-	prometheusAverageValue = "prometheus." + PixiuRootPrefix + PixiuSeparator + podsTargetAverageValue
+	prometheusAverageValue = "prometheus." + PixiuRootPrefix + PixiuSeparator + targetAverageValue
 )
 
 const (

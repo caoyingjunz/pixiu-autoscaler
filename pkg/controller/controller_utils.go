@@ -17,7 +17,6 @@ limitations under the License.
 package controller
 
 import (
-	123
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
@@ -196,14 +195,38 @@ func parseMetricSpecs(annotations map[string]string) ([]autoscalingv2.MetricSpec
 				return nil, err
 			}
 
-			metricSpec = autoscalingv2.MetricSpec{
-				Type: autoscalingv2.ResourceMetricSourceType,
-				Resource: &autoscalingv2.ResourceMetricSource{
-					Target: autoscalingv2.MetricTarget{
-						Type:               autoscalingv2.UtilizationMetricType,
-						AverageUtilization: utilpointer.Int32Ptr(averageUtilization),
+			if metricType == prometheus {
+				averageValue, err := resource.ParseQuantity(metricValue)
+				if err != nil {
+					return nil, err
+				}
+				name, ok := annotations[prometheusCustomMetric]
+				if !ok {
+					return nil, fmt.Errorf("failed to get targetCustomMetric from annotations")
+				}
+
+				metricSpec = autoscalingv2.MetricSpec{
+					Type: autoscalingv2.PodsMetricSourceType,
+					Pods: &autoscalingv2.PodsMetricSource{
+						Metric: autoscalingv2.MetricIdentifier{
+							Name: name,
+						},
+						Target: autoscalingv2.MetricTarget{
+							AverageValue: &averageValue,
+							Type:         autoscalingv2.UtilizationMetricType,
+						},
 					},
-				},
+				}
+			} else {
+				metricSpec = autoscalingv2.MetricSpec{
+					Type: autoscalingv2.ResourceMetricSourceType,
+					Resource: &autoscalingv2.ResourceMetricSource{
+						Target: autoscalingv2.MetricTarget{
+							Type:               autoscalingv2.UtilizationMetricType,
+							AverageUtilization: utilpointer.Int32Ptr(averageUtilization),
+						},
+					},
+				}
 			}
 
 		case targetAverageValue:
@@ -211,50 +234,41 @@ func parseMetricSpecs(annotations map[string]string) ([]autoscalingv2.MetricSpec
 			if err != nil {
 				return nil, err
 			}
+			if metricType == prometheus {
+				name, ok := annotations[prometheusCustomMetric]
+				if !ok {
+					return nil, fmt.Errorf("failed to get targetCustomMetric from annotations")
+				}
 
-			metricSpec = autoscalingv2.MetricSpec{
-				Type: autoscalingv2.ResourceMetricSourceType,
-				Resource: &autoscalingv2.ResourceMetricSource{
-					Target: autoscalingv2.MetricTarget{
-						Type:         autoscalingv2.AverageValueMetricType,
-						AverageValue: &averageValue,
+				metricSpec = autoscalingv2.MetricSpec{
+					Type: autoscalingv2.PodsMetricSourceType,
+					Pods: &autoscalingv2.PodsMetricSource{
+						Metric: autoscalingv2.MetricIdentifier{
+							Name: name,
+						},
+						Target: autoscalingv2.MetricTarget{
+							AverageValue: &averageValue,
+							Type:         autoscalingv2.AverageValueMetricType,
+						},
 					},
-				},
+				}
+			} else {
+				metricSpec = autoscalingv2.MetricSpec{
+					Type: autoscalingv2.ResourceMetricSourceType,
+					Resource: &autoscalingv2.ResourceMetricSource{
+						Target: autoscalingv2.MetricTarget{
+							Type:         autoscalingv2.AverageValueMetricType,
+							AverageValue: &averageValue,
+						},
+					},
+				}
 			}
 		}
-
 		switch metricType {
 		case cpu:
 			metricSpec.Resource.Name = v1.ResourceCPU
 		case memory:
 			metricSpec.Resource.Name = v1.ResourceMemory
-		case prometheus:
-			averageValue, err := resource.ParseQuantity(metricValue)
-			if err != nil {
-				return nil, err
-			}
-			name, ok := annotations[prometheusCustomMetric]
-			if !ok {
-				return nil, fmt.Errorf("failed to get targetCustomMetric from annotations")
-			}
-
-			metricSpec = autoscalingv2.MetricSpec{
-				Type: autoscalingv2.PodsMetricSourceType,
-				Pods: &autoscalingv2.PodsMetricSource{
-					Metric: autoscalingv2.MetricIdentifier{
-						Name: name,
-					},
-					Target: autoscalingv2.MetricTarget{
-						AverageValue: &averageValue,
-					},
-				},
-			}
-			switch target {
-			case targetAverageUtilization:
-				metricSpec.Pods.Target.Type = autoscalingv2.UtilizationMetricType
-			case targetAverageValue:
-				metricSpec.Pods.Target.Type = autoscalingv2.AverageValueMetricType
-			}
 		}
 
 		metricSpecs = append(metricSpecs, metricSpec)
@@ -292,27 +306,28 @@ func ManageByPixiuController(hpa *autoscalingv2.HorizontalPodAutoscaler) bool {
 }
 
 func extractReplicas(annotations map[string]string, replicasType string) (int32, error) {
-	var Replicas int64
-	var err error
+	var (
+		Replicas string
+		exists   bool
+	)
 	switch replicasType {
 	case MinReplicas:
-		minReplicas, exists := annotations[MinReplicas]
+		Replicas, exists = annotations[MinReplicas]
 		if !exists {
-			// Default minReplicas is 1
-			return 1, nil
-		}
-		if Replicas, err = strconv.ParseInt(minReplicas, 10, 32); err != nil {
-			return 0, err
+			return 1, nil // Default minReplicas is 1
 		}
 	case MaxReplicas:
-		maxReplicas, exists := annotations[MaxReplicas]
+		Replicas, exists = annotations[MaxReplicas]
 		if !exists {
-			return 0, fmt.Errorf("%s is required", MaxReplicas)
+			return 6, nil // Default maxReplicas is 6
 		}
-		Replicas, err = strconv.ParseInt(maxReplicas, 10, 32)
 	}
 
-	return int32(Replicas), err
+	targetReplicas, err := strconv.ParseInt(Replicas, 10, 32)
+	if err != nil {
+		return 0, err
+	}
+	return int32(targetReplicas), err
 }
 
 func extractAverageUtilization(averageUtilization string) (int32, error) {
@@ -333,7 +348,7 @@ type Empty struct{}
 
 func NewItems() map[string]Empty {
 	items := make(map[string]Empty)
-	for _, k := range []string{cpuAverageUtilization, memoryAverageUtilization, prometheusAverageUtilization, prometheusAverageValue, cpuAverageValue, memoryAverageValue} {
+	for _, k := range []string{cpuAverageUtilization, memoryAverageUtilization, prometheusAverageUtilization, cpuAverageValue, memoryAverageValue, prometheusAverageValue} {
 		items[k] = Empty{}
 	}
 
