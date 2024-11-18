@@ -30,7 +30,6 @@ const (
 	podsTargetAverageUtilization string = "podsTargetAverageUtilization"
 	podsTargetAverageValue       string = "podsTargetAverageValue"
 
-	// TODO: prometheus is not supported for now.
 	cpu        string = "cpu"
 	memory     string = "memory"
 	prometheus string = "prometheus"
@@ -40,6 +39,9 @@ const (
 	prometheusAverageUtilization = "prometheus." + PixiuRootPrefix + PixiuSeparator + podsTargetAverageUtilization
 
 	// When the metrics come from Prometheus, the metric name needs to be specified.
+	prometheusCustomMetric = PixiuRootPrefix + PixiuSeparator + "targetCustomMetric"
+
+	// 指标来着 prometheus 时，需要指定指标名称
 	prometheusCustomMetric = PixiuRootPrefix + PixiuSeparator + "targetCustomMetric"
 
 	// CPU, in cores. (500m = .5 cores)

@@ -220,52 +220,6 @@ func parseMetricSpecs(annotations map[string]string) ([]autoscalingv2.MetricSpec
 					},
 				},
 			}
-
-		case podsTargetAverageUtilization:
-			averageValue, err := resource.ParseQuantity(metricValue)
-			if err != nil {
-				return nil, err
-			}
-			name, ok := annotations[prometheusCustomMetric]
-			if !ok {
-				return nil, fmt.Errorf("failed to get targetCustomMetric from annotations")
-			}
-
-			metricSpec = autoscalingv2.MetricSpec{
-				Type: autoscalingv2.PodsMetricSourceType,
-				Pods: &autoscalingv2.PodsMetricSource{
-					Metric: autoscalingv2.MetricIdentifier{
-						Name: name,
-					},
-					Target: autoscalingv2.MetricTarget{
-						AverageValue: &averageValue,
-						Type:         autoscalingv2.UtilizationMetricType,
-					},
-				},
-			}
-
-		case podsTargetAverageValue:
-			averageValue, err := resource.ParseQuantity(metricValue)
-			if err != nil {
-				return nil, err
-			}
-			name, ok := annotations[prometheusCustomMetric]
-			if !ok {
-				return nil, fmt.Errorf("failed to get targetCustomMetric from annotations")
-			}
-
-			metricSpec = autoscalingv2.MetricSpec{
-				Type: autoscalingv2.PodsMetricSourceType,
-				Pods: &autoscalingv2.PodsMetricSource{
-					Metric: autoscalingv2.MetricIdentifier{
-						Name: name,
-					},
-					Target: autoscalingv2.MetricTarget{
-						AverageValue: &averageValue,
-						Type:         autoscalingv2.AverageValueMetricType,
-					},
-				},
-			}
 		}
 
 		switch metricType {
@@ -273,6 +227,33 @@ func parseMetricSpecs(annotations map[string]string) ([]autoscalingv2.MetricSpec
 			metricSpec.Resource.Name = v1.ResourceCPU
 		case memory:
 			metricSpec.Resource.Name = v1.ResourceMemory
+		case prometheus:
+			averageValue, err := resource.ParseQuantity(metricValue)
+			if err != nil {
+				return nil, err
+			}
+			name, ok := annotations[prometheusCustomMetric]
+			if !ok {
+				return nil, fmt.Errorf("failed to get targetCustomMetric from annotations")
+			}
+
+			metricSpec = autoscalingv2.MetricSpec{
+				Type: autoscalingv2.PodsMetricSourceType,
+				Pods: &autoscalingv2.PodsMetricSource{
+					Metric: autoscalingv2.MetricIdentifier{
+						Name: name,
+					},
+					Target: autoscalingv2.MetricTarget{
+						AverageValue: &averageValue,
+					},
+				},
+			}
+			switch target {
+			case targetAverageUtilization:
+				metricSpec.Pods.Target.Type = autoscalingv2.UtilizationMetricType
+			case targetAverageValue:
+				metricSpec.Pods.Target.Type = autoscalingv2.AverageValueMetricType
+			}
 		}
 
 		metricSpecs = append(metricSpecs, metricSpec)
@@ -310,28 +291,27 @@ func ManageByPixiuController(hpa *autoscalingv2.HorizontalPodAutoscaler) bool {
 }
 
 func extractReplicas(annotations map[string]string, replicasType string) (int32, error) {
-	var (
-		Replicas string
-		exists   bool
-	)
+	var Replicas int64
+	var err error
 	switch replicasType {
 	case MinReplicas:
-		Replicas, exists = annotations[MinReplicas]
+		minReplicas, exists := annotations[MinReplicas]
 		if !exists {
-			return 1, nil // Default minReplicas is 1
+			// Default minReplicas is 1
+			return 1, nil
+		}
+		if Replicas, err = strconv.ParseInt(minReplicas, 10, 32); err != nil {
+			return 0, err
 		}
 	case MaxReplicas:
-		Replicas, exists = annotations[MaxReplicas]
+		maxReplicas, exists := annotations[MaxReplicas]
 		if !exists {
-			return 6, nil // Default maxReplicas is 6
+			return 0, fmt.Errorf("%s is required", MaxReplicas)
 		}
+		Replicas, err = strconv.ParseInt(maxReplicas, 10, 32)
 	}
 
-	targetReplicas, err := strconv.ParseInt(Replicas, 10, 32)
-	if err != nil {
-		return 0, err
-	}
-	return int32(targetReplicas), err
+	return int32(Replicas), err
 }
 
 func extractAverageUtilization(averageUtilization string) (int32, error) {
@@ -352,7 +332,7 @@ type Empty struct{}
 
 func NewItems() map[string]Empty {
 	items := make(map[string]Empty)
-	for _, k := range []string{cpuAverageUtilization, memoryAverageUtilization, prometheusAverageUtilization, cpuAverageValue, memoryAverageValue, prometheusAverageValue} {
+	for _, k := range []string{cpuAverageUtilization, memoryAverageUtilization, prometheusAverageUtilization, prometheusAverageValue, cpuAverageValue, memoryAverageValue} {
 		items[k] = Empty{}
 	}
 
