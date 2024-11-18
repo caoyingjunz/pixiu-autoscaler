@@ -35,18 +35,18 @@ const (
 	memory     string = "memory"
 	prometheus string = "prometheus"
 
-	cpuAverageUtilization    = "cpu." + PixiuRootPrefix + PixiuSeparator + targetAverageUtilization
-	memoryAverageUtilization = "memory." + PixiuRootPrefix + PixiuSeparator + targetAverageUtilization
-	podsAverageUtilization   = "prometheus." + PixiuRootPrefix + PixiuSeparator + podsTargetAverageUtilization
+	cpuAverageUtilization        = "cpu." + PixiuRootPrefix + PixiuSeparator + targetAverageUtilization
+	memoryAverageUtilization     = "memory." + PixiuRootPrefix + PixiuSeparator + targetAverageUtilization
+	prometheusAverageUtilization = "prometheus." + PixiuRootPrefix + PixiuSeparator + podsTargetAverageUtilization
 
 	// When the metrics come from Prometheus, the metric name needs to be specified.
 	prometheusCustomMetric = PixiuRootPrefix + PixiuSeparator + "targetCustomMetric"
 
 	// CPU, in cores. (500m = .5 cores)
 	// Memory, in bytes. (500Gi = 500GiB = 500 * 1024 * 1024 * 1024)
-	cpuAverageValue    = "cpu." + PixiuRootPrefix + PixiuSeparator + targetAverageValue
-	memoryAverageValue = "memory." + PixiuRootPrefix + PixiuSeparator + targetAverageValue
-	podsAverageValue   = "prometheus." + PixiuRootPrefix + PixiuSeparator + podsTargetAverageValue
+	cpuAverageValue        = "cpu." + PixiuRootPrefix + PixiuSeparator + targetAverageValue
+	memoryAverageValue     = "memory." + PixiuRootPrefix + PixiuSeparator + targetAverageValue
+	prometheusAverageValue = "prometheus." + PixiuRootPrefix + PixiuSeparator + podsTargetAverageValue
 )
 
 const (

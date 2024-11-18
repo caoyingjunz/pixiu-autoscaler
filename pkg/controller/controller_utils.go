@@ -352,7 +352,7 @@ type Empty struct{}
 
 func NewItems() map[string]Empty {
 	items := make(map[string]Empty)
-	for _, k := range []string{cpuAverageUtilization, memoryAverageUtilization, podsAverageUtilization, cpuAverageValue, memoryAverageValue, podsAverageValue} {
+	for _, k := range []string{cpuAverageUtilization, memoryAverageUtilization, prometheusAverageUtilization, cpuAverageValue, memoryAverageValue, prometheusAverageValue} {
 		items[k] = Empty{}
 	}
 
