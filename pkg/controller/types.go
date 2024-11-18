@@ -37,6 +37,9 @@ const (
 	memoryAverageUtilization     = "memory." + PixiuRootPrefix + PixiuSeparator + targetAverageUtilization
 	prometheusAverageUtilization = "prometheus." + PixiuRootPrefix + PixiuSeparator + targetAverageUtilization
 
+	// When the metrics come from Prometheus, the metric name needs to be specified.
+	prometheusCustomMetric = PixiuRootPrefix + PixiuSeparator + "targetCustomMetric"
+
 	// CPU, in cores. (500m = .5 cores)
 	// Memory, in bytes. (500Gi = 500GiB = 500 * 1024 * 1024 * 1024)
 	cpuAverageValue        = "cpu." + PixiuRootPrefix + PixiuSeparator + targetAverageValue
