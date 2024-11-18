@@ -23,28 +23,30 @@ const (
 	PixiuSeparator  string = "/"
 	PixiuDot        string = "."
 
-	MinReplicas              string = "hpa.caoyingjunz.io/minReplicas"
-	MaxReplicas              string = "hpa.caoyingjunz.io/maxReplicas"
-	targetAverageUtilization string = "targetAverageUtilization"
-	targetAverageValue       string = "targetAverageValue"
+	MinReplicas                  string = "hpa.caoyingjunz.io/minReplicas"
+	MaxReplicas                  string = "hpa.caoyingjunz.io/maxReplicas"
+	targetAverageUtilization     string = "targetAverageUtilization"
+	targetAverageValue           string = "targetAverageValue"
+	podsTargetAverageUtilization string = "podsTargetAverageUtilization"
+	podsTargetAverageValue       string = "podsTargetAverageValue"
 
 	// TODO: prometheus is not supported for now.
 	cpu        string = "cpu"
 	memory     string = "memory"
 	prometheus string = "prometheus"
 
-	cpuAverageUtilization        = "cpu." + PixiuRootPrefix + PixiuSeparator + targetAverageUtilization
-	memoryAverageUtilization     = "memory." + PixiuRootPrefix + PixiuSeparator + targetAverageUtilization
-	prometheusAverageUtilization = "prometheus." + PixiuRootPrefix + PixiuSeparator + targetAverageUtilization
+	cpuAverageUtilization    = "cpu." + PixiuRootPrefix + PixiuSeparator + targetAverageUtilization
+	memoryAverageUtilization = "memory." + PixiuRootPrefix + PixiuSeparator + targetAverageUtilization
+	podsAverageUtilization   = "prometheus." + PixiuRootPrefix + PixiuSeparator + podsTargetAverageUtilization
 
 	// When the metrics come from Prometheus, the metric name needs to be specified.
 	prometheusCustomMetric = PixiuRootPrefix + PixiuSeparator + "targetCustomMetric"
 
 	// CPU, in cores. (500m = .5 cores)
 	// Memory, in bytes. (500Gi = 500GiB = 500 * 1024 * 1024 * 1024)
-	cpuAverageValue        = "cpu." + PixiuRootPrefix + PixiuSeparator + targetAverageValue
-	memoryAverageValue     = "memory." + PixiuRootPrefix + PixiuSeparator + targetAverageValue
-	prometheusAverageValue = "prometheus." + PixiuRootPrefix + PixiuSeparator + targetAverageValue
+	cpuAverageValue    = "cpu." + PixiuRootPrefix + PixiuSeparator + targetAverageValue
+	memoryAverageValue = "memory." + PixiuRootPrefix + PixiuSeparator + targetAverageValue
+	podsAverageValue   = "prometheus." + PixiuRootPrefix + PixiuSeparator + podsTargetAverageValue
 )
 
 const (

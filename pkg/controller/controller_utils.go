@@ -220,14 +220,8 @@ func parseMetricSpecs(annotations map[string]string) ([]autoscalingv2.MetricSpec
 					},
 				},
 			}
-		}
 
-		switch metricType {
-		case cpu:
-			metricSpec.Resource.Name = v1.ResourceCPU
-		case memory:
-			metricSpec.Resource.Name = v1.ResourceMemory
-		case prometheus:
+		case podsTargetAverageUtilization:
 			averageValue, err := resource.ParseQuantity(metricValue)
 			if err != nil {
 				return nil, err
@@ -245,15 +239,40 @@ func parseMetricSpecs(annotations map[string]string) ([]autoscalingv2.MetricSpec
 					},
 					Target: autoscalingv2.MetricTarget{
 						AverageValue: &averageValue,
+						Type:         autoscalingv2.UtilizationMetricType,
 					},
 				},
 			}
-			switch target {
-			case targetAverageUtilization:
-				metricSpec.Pods.Target.Type = autoscalingv2.UtilizationMetricType
-			case targetAverageValue:
-				metricSpec.Pods.Target.Type = autoscalingv2.AverageValueMetricType
+
+		case podsTargetAverageValue:
+			averageValue, err := resource.ParseQuantity(metricValue)
+			if err != nil {
+				return nil, err
 			}
+			name, ok := annotations[prometheusCustomMetric]
+			if !ok {
+				return nil, fmt.Errorf("failed to get targetCustomMetric from annotations")
+			}
+
+			metricSpec = autoscalingv2.MetricSpec{
+				Type: autoscalingv2.PodsMetricSourceType,
+				Pods: &autoscalingv2.PodsMetricSource{
+					Metric: autoscalingv2.MetricIdentifier{
+						Name: name,
+					},
+					Target: autoscalingv2.MetricTarget{
+						AverageValue: &averageValue,
+						Type:         autoscalingv2.AverageValueMetricType,
+					},
+				},
+			}
+		}
+
+		switch metricType {
+		case cpu:
+			metricSpec.Resource.Name = v1.ResourceCPU
+		case memory:
+			metricSpec.Resource.Name = v1.ResourceMemory
 		}
 
 		metricSpecs = append(metricSpecs, metricSpec)
@@ -333,7 +352,7 @@ type Empty struct{}
 
 func NewItems() map[string]Empty {
 	items := make(map[string]Empty)
-	for _, k := range []string{cpuAverageUtilization, memoryAverageUtilization, prometheusAverageUtilization, cpuAverageValue, memoryAverageValue, prometheusAverageValue} {
+	for _, k := range []string{cpuAverageUtilization, memoryAverageUtilization, podsAverageUtilization, cpuAverageValue, memoryAverageValue, podsAverageValue} {
 		items[k] = Empty{}
 	}
 
