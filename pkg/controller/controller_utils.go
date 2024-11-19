@@ -162,7 +162,7 @@ func getMetricTarget(metricName string) (string, string, error) {
 		return "", "", fmt.Errorf("invalied metric item %s", metricName)
 	}
 	metricType := metricTypeSlice[0]
-	if metricType != cpu && metricType != memory {
+	if metricType != cpu && metricType != memory && metricType != prometheus {
 		return "", "", fmt.Errorf("unsupprted metric resource name: %s", metricType)
 	}
 
@@ -195,14 +195,38 @@ func parseMetricSpecs(annotations map[string]string) ([]autoscalingv2.MetricSpec
 				return nil, err
 			}
 
-			metricSpec = autoscalingv2.MetricSpec{
-				Type: autoscalingv2.ResourceMetricSourceType,
-				Resource: &autoscalingv2.ResourceMetricSource{
-					Target: autoscalingv2.MetricTarget{
-						Type:               autoscalingv2.UtilizationMetricType,
-						AverageUtilization: utilpointer.Int32Ptr(averageUtilization),
+			if metricType == prometheus {
+				averageValue, err := resource.ParseQuantity(metricValue)
+				if err != nil {
+					return nil, err
+				}
+				name, ok := annotations[prometheusCustomMetric]
+				if !ok {
+					return nil, fmt.Errorf("failed to get targetCustomMetric from annotations")
+				}
+
+				metricSpec = autoscalingv2.MetricSpec{
+					Type: autoscalingv2.PodsMetricSourceType,
+					Pods: &autoscalingv2.PodsMetricSource{
+						Metric: autoscalingv2.MetricIdentifier{
+							Name: name,
+						},
+						Target: autoscalingv2.MetricTarget{
+							AverageValue: &averageValue,
+							Type:         autoscalingv2.UtilizationMetricType,
+						},
 					},
-				},
+				}
+			} else {
+				metricSpec = autoscalingv2.MetricSpec{
+					Type: autoscalingv2.ResourceMetricSourceType,
+					Resource: &autoscalingv2.ResourceMetricSource{
+						Target: autoscalingv2.MetricTarget{
+							Type:               autoscalingv2.UtilizationMetricType,
+							AverageUtilization: utilpointer.Int32Ptr(averageUtilization),
+						},
+					},
+				}
 			}
 
 		case targetAverageValue:
@@ -210,18 +234,36 @@ func parseMetricSpecs(annotations map[string]string) ([]autoscalingv2.MetricSpec
 			if err != nil {
 				return nil, err
 			}
+			if metricType == prometheus {
+				name, ok := annotations[prometheusCustomMetric]
+				if !ok {
+					return nil, fmt.Errorf("failed to get targetCustomMetric from annotations")
+				}
 
-			metricSpec = autoscalingv2.MetricSpec{
-				Type: autoscalingv2.ResourceMetricSourceType,
-				Resource: &autoscalingv2.ResourceMetricSource{
-					Target: autoscalingv2.MetricTarget{
-						Type:         autoscalingv2.AverageValueMetricType,
-						AverageValue: &averageValue,
+				metricSpec = autoscalingv2.MetricSpec{
+					Type: autoscalingv2.PodsMetricSourceType,
+					Pods: &autoscalingv2.PodsMetricSource{
+						Metric: autoscalingv2.MetricIdentifier{
+							Name: name,
+						},
+						Target: autoscalingv2.MetricTarget{
+							AverageValue: &averageValue,
+							Type:         autoscalingv2.AverageValueMetricType,
+						},
 					},
-				},
+				}
+			} else {
+				metricSpec = autoscalingv2.MetricSpec{
+					Type: autoscalingv2.ResourceMetricSourceType,
+					Resource: &autoscalingv2.ResourceMetricSource{
+						Target: autoscalingv2.MetricTarget{
+							Type:         autoscalingv2.AverageValueMetricType,
+							AverageValue: &averageValue,
+						},
+					},
+				}
 			}
 		}
-
 		switch metricType {
 		case cpu:
 			metricSpec.Resource.Name = v1.ResourceCPU
@@ -306,7 +348,7 @@ type Empty struct{}
 
 func NewItems() map[string]Empty {
 	items := make(map[string]Empty)
-	for _, k := range []string{cpuAverageUtilization, memoryAverageUtilization, cpuAverageValue, memoryAverageValue} {
+	for _, k := range []string{cpuAverageUtilization, memoryAverageUtilization, prometheusAverageUtilization, cpuAverageValue, memoryAverageValue, prometheusAverageValue} {
 		items[k] = Empty{}
 	}
 
