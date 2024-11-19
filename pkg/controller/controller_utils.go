@@ -220,16 +220,20 @@ func parseMetricSpecFor(target string, metricType string, metricValue string, an
 		if err != nil {
 			return autoscalingv2.MetricSpec{}, err
 		}
-		metricSpec.Resource.Target = autoscalingv2.MetricTarget{
-			Type: autoscalingv2.UtilizationMetricType, AverageUtilization: utilpointer.Int32Ptr(averageUtilization),
+		metricSpec.Resource = &autoscalingv2.ResourceMetricSource{
+			Target: autoscalingv2.MetricTarget{
+				Type: autoscalingv2.UtilizationMetricType, AverageUtilization: utilpointer.Int32Ptr(averageUtilization),
+			},
 		}
 	case targetAverageValue:
 		averageValue, err := resource.ParseQuantity(metricValue)
 		if err != nil {
 			return autoscalingv2.MetricSpec{}, err
 		}
-		metricSpec.Resource.Target = autoscalingv2.MetricTarget{
-			Type: autoscalingv2.AverageValueMetricType, AverageValue: &averageValue,
+		metricSpec.Resource = &autoscalingv2.ResourceMetricSource{
+			Target: autoscalingv2.MetricTarget{
+				Type: autoscalingv2.AverageValueMetricType, AverageValue: &averageValue,
+			},
 		}
 	}
 
