@@ -187,90 +187,10 @@ func parseMetricSpecs(annotations map[string]string) ([]autoscalingv2.MetricSpec
 			return nil, err
 		}
 
-		var metricSpec autoscalingv2.MetricSpec
-		switch target {
-		case targetAverageUtilization:
-			averageUtilization, err := extractAverageUtilization(metricValue)
-			if err != nil {
-				return nil, err
-			}
-
-			if metricType == prometheus {
-				averageValue, err := resource.ParseQuantity(metricValue)
-				if err != nil {
-					return nil, err
-				}
-				name, ok := annotations[prometheusCustomMetric]
-				if !ok {
-					return nil, fmt.Errorf("failed to get targetCustomMetric from annotations")
-				}
-
-				metricSpec = autoscalingv2.MetricSpec{
-					Type: autoscalingv2.PodsMetricSourceType,
-					Pods: &autoscalingv2.PodsMetricSource{
-						Metric: autoscalingv2.MetricIdentifier{
-							Name: name,
-						},
-						Target: autoscalingv2.MetricTarget{
-							AverageValue: &averageValue,
-							Type:         autoscalingv2.UtilizationMetricType,
-						},
-					},
-				}
-			} else {
-				metricSpec = autoscalingv2.MetricSpec{
-					Type: autoscalingv2.ResourceMetricSourceType,
-					Resource: &autoscalingv2.ResourceMetricSource{
-						Target: autoscalingv2.MetricTarget{
-							Type:               autoscalingv2.UtilizationMetricType,
-							AverageUtilization: utilpointer.Int32Ptr(averageUtilization),
-						},
-					},
-				}
-			}
-
-		case targetAverageValue:
-			averageValue, err := resource.ParseQuantity(metricValue)
-			if err != nil {
-				return nil, err
-			}
-			if metricType == prometheus {
-				name, ok := annotations[prometheusCustomMetric]
-				if !ok {
-					return nil, fmt.Errorf("failed to get targetCustomMetric from annotations")
-				}
-
-				metricSpec = autoscalingv2.MetricSpec{
-					Type: autoscalingv2.PodsMetricSourceType,
-					Pods: &autoscalingv2.PodsMetricSource{
-						Metric: autoscalingv2.MetricIdentifier{
-							Name: name,
-						},
-						Target: autoscalingv2.MetricTarget{
-							AverageValue: &averageValue,
-							Type:         autoscalingv2.AverageValueMetricType,
-						},
-					},
-				}
-			} else {
-				metricSpec = autoscalingv2.MetricSpec{
-					Type: autoscalingv2.ResourceMetricSourceType,
-					Resource: &autoscalingv2.ResourceMetricSource{
-						Target: autoscalingv2.MetricTarget{
-							Type:         autoscalingv2.AverageValueMetricType,
-							AverageValue: &averageValue,
-						},
-					},
-				}
-			}
+		metricSpec, err := parseMetricSpec(target, metricType, metricValue, annotations)
+		if err != nil {
+			return nil, err
 		}
-		switch metricType {
-		case cpu:
-			metricSpec.Resource.Name = v1.ResourceCPU
-		case memory:
-			metricSpec.Resource.Name = v1.ResourceMemory
-		}
-
 		metricSpecs = append(metricSpecs, metricSpec)
 	}
 
@@ -279,6 +199,80 @@ func parseMetricSpecs(annotations map[string]string) ([]autoscalingv2.MetricSpec
 	}
 
 	return metricSpecs, nil
+}
+
+func parseMetricSpec(target string, metricType string, metricValue string, annotations map[string]string) (autoscalingv2.MetricSpec, error) {
+	if metricType == prometheus {
+		return parseMetricSpecForPrometheus(target, metricType, metricValue, annotations)
+	}
+
+	return parseMetricSpecFor(target, metricType, metricValue, annotations)
+}
+
+func parseMetricSpecFor(target string, metricType string, metricValue string, annotations map[string]string) (autoscalingv2.MetricSpec, error) {
+	metricSpec := autoscalingv2.MetricSpec{
+		Type: autoscalingv2.ResourceMetricSourceType,
+	}
+
+	switch target {
+	case targetAverageUtilization:
+		averageUtilization, err := extractAverageUtilization(metricValue)
+		if err != nil {
+			return autoscalingv2.MetricSpec{}, err
+		}
+		metricSpec.Resource.Target = autoscalingv2.MetricTarget{
+			Type: autoscalingv2.UtilizationMetricType, AverageUtilization: utilpointer.Int32Ptr(averageUtilization),
+		}
+	case targetAverageValue:
+		averageValue, err := resource.ParseQuantity(metricValue)
+		if err != nil {
+			return autoscalingv2.MetricSpec{}, err
+		}
+		metricSpec.Resource.Target = autoscalingv2.MetricTarget{
+			Type: autoscalingv2.AverageValueMetricType, AverageValue: &averageValue,
+		}
+	}
+
+	switch metricType {
+	case cpu:
+		metricSpec.Resource.Name = v1.ResourceCPU
+	case memory:
+		metricSpec.Resource.Name = v1.ResourceMemory
+	}
+
+	return metricSpec, nil
+}
+
+func parseMetricSpecForPrometheus(target string, metricType string, metricValue string, annotations map[string]string) (autoscalingv2.MetricSpec, error) {
+	name, ok := annotations[prometheusCustomMetric]
+	if !ok {
+		return autoscalingv2.MetricSpec{}, fmt.Errorf("failed to get targetCustomMetric from annotations")
+	}
+	averageValue, err := resource.ParseQuantity(metricValue)
+	if err != nil {
+		return autoscalingv2.MetricSpec{}, nil
+	}
+
+	metricSpec := autoscalingv2.MetricSpec{
+		Type: autoscalingv2.PodsMetricSourceType,
+		Pods: &autoscalingv2.PodsMetricSource{
+			Metric: autoscalingv2.MetricIdentifier{
+				Name: name,
+			},
+			Target: autoscalingv2.MetricTarget{
+				AverageValue: &averageValue,
+			},
+		},
+	}
+
+	switch target {
+	case targetAverageUtilization:
+		metricSpec.Pods.Target.Type = autoscalingv2.UtilizationMetricType
+	case targetAverageValue:
+		metricSpec.Pods.Target.Type = autoscalingv2.AverageValueMetricType
+	}
+
+	return metricSpec, nil
 }
 
 func IsOwnerReference(uid types.UID, ownerReferences []metav1.OwnerReference) bool {
