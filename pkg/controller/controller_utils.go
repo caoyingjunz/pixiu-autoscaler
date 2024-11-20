@@ -258,8 +258,8 @@ func parseMetricSpecForPrometheus(target string, metricType string, metricValue 
 	}
 
 	metricSpec := autoscalingv2.MetricSpec{
-		Type: autoscalingv2.PodsMetricSourceType,
-		Pods: &autoscalingv2.PodsMetricSource{
+		Type: autoscalingv2.ExternalMetricSourceType,
+		External: &autoscalingv2.ExternalMetricSource{
 			Metric: autoscalingv2.MetricIdentifier{
 				Name: name,
 			},
@@ -271,9 +271,9 @@ func parseMetricSpecForPrometheus(target string, metricType string, metricValue 
 
 	switch target {
 	case targetAverageUtilization:
-		metricSpec.Pods.Target.Type = autoscalingv2.UtilizationMetricType
+		metricSpec.External.Target.Type = autoscalingv2.UtilizationMetricType
 	case targetAverageValue:
-		metricSpec.Pods.Target.Type = autoscalingv2.AverageValueMetricType
+		metricSpec.External.Target.Type = autoscalingv2.AverageValueMetricType
 	}
 
 	return metricSpec, nil
