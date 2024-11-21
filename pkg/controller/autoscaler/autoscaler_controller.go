@@ -22,6 +22,7 @@ import (
 	"reflect"
 	"time"
 
+	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	"k8s.io/api/core/v1"
@@ -209,6 +210,73 @@ func (ac *AutoscalerController) sync(d *appsv1.Deployment, hpaList []*autoscalin
 	if err != nil {
 		ac.eventRecorder.Eventf(d, v1.EventTypeWarning, "FailedNewestHPA", fmt.Sprintf("Failed extract newest HPA %s/%s", d.GetNamespace(), d.GetName()))
 		return err
+	}
+	cm, err := ac.client.CoreV1().ConfigMaps("default").Get(context.TODO(), "prometheus-adapter", metav1.GetOptions{})
+	if err != nil {
+		ac.eventRecorder.Eventf(d, v1.EventTypeWarning, "FailedGetCM", fmt.Sprintf("Failed extract get CM %s/%s", "default", "prometheus-adapter"))
+		return err
+	}
+
+	var config controller.PrometheusAdapterConfig
+
+	err = yaml.Unmarshal([]byte(cm.Data["config.yaml"]), &config)
+	if err != nil {
+		fmt.Println(err)
+	}
+	exists := false
+	for _, v := range config.ExternalRules {
+		if v.SeriesQuery == newHPA.Spec.Metrics[0].External.Metric.Name {
+			exists = true
+			break
+		}
+	}
+	if !exists {
+		newRule := controller.ExternalRule{
+			MetricsQuery: "<<.Series>>",
+			Name: controller.RuleName{
+				As:      "",
+				Matches: "",
+			},
+			Resources: controller.ResourceMap{
+				Overrides: map[string]controller.ResourceOverride{
+					"namespace": {Resource: "namespace"},
+				},
+			},
+			SeriesQuery: newHPA.Spec.Metrics[0].External.Metric.Name,
+		}
+		config.ExternalRules = append(config.ExternalRules, newRule)
+		updatedYaml, err := yaml.Marshal(&config)
+		if err != nil {
+			fmt.Println(err)
+			return err
+		}
+		// 更新 ConfigMap
+		cm.Data["config.yaml"] = string(updatedYaml)
+		_, err = ac.client.CoreV1().ConfigMaps("default").Update(context.TODO(), cm, metav1.UpdateOptions{})
+		if err != nil {
+			ac.eventRecorder.Eventf(d, v1.EventTypeWarning, "FailedSetCM", fmt.Sprintf("Failed extract set CM %s/%s", "default", "prometheus-adapter"))
+			return err
+		}
+		deployment, err := ac.client.AppsV1().Deployments("default").Get(context.TODO(), "prometheus-adapter", metav1.GetOptions{})
+		if err != nil {
+			ac.eventRecorder.Eventf(d, v1.EventTypeWarning, "FailedGetDeployment", fmt.Sprintf("Failed extract get deployment %s/%s", "default", "prometheus-adapter"))
+			return err
+		}
+		// 更新 Annotation 触发重启
+		if deployment.Spec.Template.Annotations == nil {
+			deployment.Spec.Template.Annotations = make(map[string]string)
+		}
+		deployment.Spec.Template.Annotations["kubectl.kubernetes.io/restartedAt"] = metav1.Now().Format("2006-01-02T15:04:05Z")
+
+		_, err = ac.client.AppsV1().Deployments("default").Update(context.TODO(), deployment, metav1.UpdateOptions{})
+		if err != nil {
+			ac.eventRecorder.Eventf(d, v1.EventTypeWarning, "FailedSetDeployment", fmt.Sprintf("Failed extract set deployment %s/%s", "default", "prometheus-adapter"))
+			return err
+		}
+		fmt.Println("新规则已添加到 ExternalRules 并更新到 ConfigMap")
+		fmt.Printf("Deployment %s/%s 已成功重启\n", "default", "prometheus-adapter")
+	} else {
+		fmt.Println("规则已存在，跳过添加")
 	}
 
 	if len(hpaList) == 0 {
