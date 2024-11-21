@@ -36,7 +36,7 @@ const (
 	memoryAverageUtilization     = "memory." + PixiuRootPrefix + PixiuSeparator + targetAverageUtilization
 	prometheusAverageUtilization = "prometheus." + PixiuRootPrefix + PixiuSeparator + targetAverageUtilization
 
-	// 指标来着 prometheus 时，需要指定指标名称
+	// 指标来自 prometheus 时，需要指定指标名称
 	prometheusCustomMetric = PixiuRootPrefix + PixiuSeparator + "targetCustomMetric"
 
 	// CPU, in cores. (500m = .5 cores)
