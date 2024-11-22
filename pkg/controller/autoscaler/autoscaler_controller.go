@@ -610,8 +610,6 @@ func (ac *AutoscalerController) updateCM(old, cur interface{}) {
 
 	if oldCM.Name == "prometheus-adapter" && curCM.Name == "prometheus-adapter" {
 		if oldCM.Data["config.yaml"] != curCM.Data["config.yaml"] {
-
-			fmt.Println(curCM.Data["config.yaml"])
 			ds, err := ac.dLister.Deployments("").List(labels.Everything())
 			if err != nil {
 				klog.Errorf("Failed to list HPAs: %v\n", err)
