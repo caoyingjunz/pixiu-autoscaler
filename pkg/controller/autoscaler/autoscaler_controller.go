@@ -19,6 +19,7 @@ package autoscaler
 import (
 	"context"
 	"fmt"
+	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
 	"reflect"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	"k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -33,11 +35,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	appsinformers "k8s.io/client-go/informers/apps/v1"
 	autoscalinginformers "k8s.io/client-go/informers/autoscaling/v2"
+	coreinformers "k8s.io/client-go/informers/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
-	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
 	appslisters "k8s.io/client-go/listers/apps/v1"
 	autoscalinglisters "k8s.io/client-go/listers/autoscaling/v2"
+	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -64,6 +67,7 @@ type AutoscalerController struct {
 	dLister appslisters.DeploymentLister
 	// hpaLister is able to list/get HPAs from the shared informer's cache
 	hpaLister autoscalinglisters.HorizontalPodAutoscalerLister
+	cmLister  corelisters.ConfigMapLister
 
 	// dListerSynced returns true if the Deployment store has been synced at least once.
 	dListerSynced cache.InformerSynced
@@ -81,6 +85,7 @@ type AutoscalerController struct {
 func NewAutoscalerController(
 	dInformer appsinformers.DeploymentInformer,
 	hpaInformer autoscalinginformers.HorizontalPodAutoscalerInformer,
+	cmInformer coreinformers.ConfigMapInformer,
 	client clientset.Interface) (*AutoscalerController, error) {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -113,8 +118,14 @@ func NewAutoscalerController(
 		DeleteFunc: ac.deleteHPA,
 	})
 
+	// ConfigMap
+	cmInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		UpdateFunc: ac.updateCM,
+	})
+
 	ac.dLister = dInformer.Lister()
 	ac.hpaLister = hpaInformer.Lister()
+	ac.cmLister = cmInformer.Lister()
 
 	// syncAutoscalers
 	ac.syncHandler = ac.syncAutoscalers
@@ -593,6 +604,32 @@ func (ac *AutoscalerController) deleteHPA(obj interface{}) {
 	ac.enqueueDeployment(d)
 }
 
+func (ac *AutoscalerController) updateCM(old, cur interface{}) {
+	oldCM := old.(*corev1.ConfigMap)
+	curCM := cur.(*corev1.ConfigMap)
+
+	if oldCM.Name == "prometheus-adapter" && curCM.Name == "prometheus-adapter" {
+		if oldCM.Data["config.yaml"] != curCM.Data["config.yaml"] {
+			ds, err := ac.dLister.Deployments("").List(labels.Everything())
+			if err != nil {
+				klog.Errorf("Failed to list HPAs: %v\n", err)
+				return
+			}
+			for _, d := range ds {
+				annotations := d.GetAnnotations()
+				if annotations["hpa.caoyingjunz.io/targetCustomMetric"] != "" {
+					key, err := cache.MetaNamespaceKeyFunc(d)
+					if err != nil {
+						klog.Errorf("Failed to generate key for HPA: %v\n", err)
+						return
+					}
+					ac.queue.Add(key)
+					klog.Infof("HPA added to workqueue for resync: %s", d.Name)
+				}
+			}
+		}
+	}
+}
 func (ac *AutoscalerController) resolveControllerRef(namespace string, controllerRef *metav1.OwnerReference) *appsv1.Deployment {
 	if controllerRef.Kind != controller.Deployment {
 		return nil
