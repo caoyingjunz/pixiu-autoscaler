@@ -19,7 +19,6 @@ package autoscaler
 import (
 	"context"
 	"fmt"
-	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
 	"reflect"
 	"time"
 
@@ -38,6 +37,7 @@ import (
 	coreinformers "k8s.io/client-go/informers/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
+	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
 	appslisters "k8s.io/client-go/listers/apps/v1"
 	autoscalinglisters "k8s.io/client-go/listers/autoscaling/v2"
 	corelisters "k8s.io/client-go/listers/core/v1"
