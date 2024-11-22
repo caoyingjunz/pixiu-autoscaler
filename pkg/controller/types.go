@@ -53,3 +53,35 @@ const (
 	Deployment              string = "Deployment"
 	HorizontalPodAutoscaler string = "HorizontalPodAutoscaler"
 )
+
+type PrometheusAdapterConfig struct {
+	Rules         []Rule         `yaml:"rules"`
+	ExternalRules []ExternalRule `yaml:"externalRules"`
+}
+
+type Rule struct {
+	MetricsQuery string      `yaml:"metricsQuery"`
+	Name         RuleName    `yaml:"name"`
+	Resources    ResourceMap `yaml:"resources"`
+	SeriesQuery  string      `yaml:"seriesQuery"`
+}
+
+type ExternalRule struct {
+	MetricsQuery string      `yaml:"metricsQuery"`
+	Name         RuleName    `yaml:"name"`
+	Resources    ResourceMap `yaml:"resources"`
+	SeriesQuery  string      `yaml:"seriesQuery"`
+}
+
+type RuleName struct {
+	As      string `yaml:"as"`
+	Matches string `yaml:"matches"`
+}
+
+type ResourceMap struct {
+	Overrides map[string]ResourceOverride `yaml:"overrides"`
+}
+
+type ResourceOverride struct {
+	Resource string `yaml:"resource"`
+}
