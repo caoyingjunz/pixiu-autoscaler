@@ -42,7 +42,6 @@ import (
 	autoscalinglisters "k8s.io/client-go/listers/autoscaling/v2"
 	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
-
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/component-base/metrics/prometheus/ratelimiter"
