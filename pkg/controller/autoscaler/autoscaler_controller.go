@@ -42,6 +42,7 @@ import (
 	autoscalinglisters "k8s.io/client-go/listers/autoscaling/v2"
 	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/component-base/metrics/prometheus/ratelimiter"
@@ -73,6 +74,8 @@ type AutoscalerController struct {
 	dListerSynced cache.InformerSynced
 	// hpaListerSynced returns true if the HPA store has been synced at least once.
 	hpaListerSynced cache.InformerSynced
+
+	cmListerSynced cache.InformerSynced
 
 	// AutoscalerController that need to be synced
 	queue workqueue.RateLimitingInterface
@@ -212,12 +215,25 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 }
 
 func (ac *AutoscalerController) fetchPrometheusAdapterConfig(d *appsv1.Deployment) (*v1.ConfigMap, error) {
-	cm, err := ac.client.CoreV1().ConfigMaps("default").Get(context.TODO(), "prometheus-adapter", metav1.GetOptions{})
+	//cm, err := ac.client.CoreV1().ConfigMaps("default").Get(context.TODO(), "prometheus-adapter", metav1.GetOptions{})
+	cms, err := ac.cmLister.ConfigMaps("default").List(labels.Everything())
 	if err != nil {
+		ac.eventRecorder.Eventf(d, v1.EventTypeWarning, "FailedListCM", fmt.Sprintf("Failed extract list CM namespace: %s", "default"))
+		return nil, err
+	}
+	// 遍历列表，找到特定的 ConfigMap
+	var targetConfigMap *v1.ConfigMap
+	for _, cm := range cms {
+		if cm.Name == "prometheus-adapter" {
+			targetConfigMap = cm
+			break
+		}
+	}
+	if targetConfigMap == nil {
 		ac.eventRecorder.Eventf(d, v1.EventTypeWarning, "FailedGetCM", fmt.Sprintf("Failed extract get CM %s/%s", "default", "prometheus-adapter"))
 		return nil, err
 	}
-	return cm, nil
+	return targetConfigMap, nil
 }
 
 func (ac *AutoscalerController) restartPrometheusAdapterDeployment() error {
@@ -285,16 +301,18 @@ func (ac *AutoscalerController) sync(d *appsv1.Deployment, hpaList []*autoscalin
 			}
 			// 更新 ConfigMap
 			configMap.Data["config.yaml"] = string(updatedYaml)
+			configMap.Annotations["skip-reconcile"] = "true"
 			_, err = ac.client.CoreV1().ConfigMaps("default").Update(context.TODO(), configMap, metav1.UpdateOptions{})
 			if err != nil {
 				ac.eventRecorder.Eventf(d, v1.EventTypeWarning, "FailedSetCM", fmt.Sprintf("Failed extract set CM %s/%s", "default", "prometheus-adapter"))
 				return err
 			}
-			err = ac.restartPrometheusAdapterDeployment()
+			//err = ac.restartPrometheusAdapterDeployment()
 			if err != nil {
 				klog.ErrorS(err, "Failed to restart Prometheus adapter deployment")
 				return err
 			}
+
 			klog.Infof("新规则已添加到 ExternalRules 并更新到 ConfigMap")
 			klog.Infof("Deployment %s/%s 已成功重启\n", "default", "prometheus-adapter")
 		} else {
@@ -366,7 +384,7 @@ func (ac *AutoscalerController) sync(d *appsv1.Deployment, hpaList []*autoscalin
 							klog.Infof("Removed rule with SeriesQuery: %s", rule.SeriesQuery)
 						}
 					}
-					if !exists {
+					if exists {
 
 						config.ExternalRules = updatedRules
 
@@ -377,7 +395,7 @@ func (ac *AutoscalerController) sync(d *appsv1.Deployment, hpaList []*autoscalin
 							return err
 						}
 						configMap.Data["config.yaml"] = string(updatedYaml)
-						_, err = ac.client.CoreV1().ConfigMaps(configMap.Namespace).Update(context.TODO(), configMap, metav1.UpdateOptions{})
+						_, err = ac.fetchPrometheusAdapterConfig(d)
 						if err != nil {
 							klog.Errorf("Failed to update ConfigMap %s/%s: %v", configMap.Namespace, configMap.Name, err)
 							return err
@@ -387,6 +405,7 @@ func (ac *AutoscalerController) sync(d *appsv1.Deployment, hpaList []*autoscalin
 							return err
 						}
 						klog.Infof("ConfigMap %s/%s updated successfully, rule with SeriesQuery %s removed", configMap.Namespace, configMap.Name, metricName)
+						klog.Infof("Deployment %s/%s 已成功重启\n", "default", "prometheus-adapter")
 					}
 				}
 			}
@@ -605,31 +624,50 @@ func (ac *AutoscalerController) deleteHPA(obj interface{}) {
 }
 
 func (ac *AutoscalerController) updateCM(old, cur interface{}) {
-	oldCM := old.(*corev1.ConfigMap)
-	curCM := cur.(*corev1.ConfigMap)
+	oldCM, okOld := old.(*corev1.ConfigMap)
+	curCM, okCur := cur.(*corev1.ConfigMap)
 
-	if oldCM.Name == "prometheus-adapter" && curCM.Name == "prometheus-adapter" {
-		if oldCM.Data["config.yaml"] != curCM.Data["config.yaml"] {
-			ds, err := ac.dLister.Deployments("").List(labels.Everything())
+	// 检查类型断言是否成功，避免潜在的 panic
+	if !okOld || !okCur {
+		klog.Errorf("Failed to cast objects to ConfigMap")
+		return
+	}
+
+	// 确保关注的 ConfigMap 名称一致
+	if oldCM.Name != "prometheus-adapter" || curCM.Name != "prometheus-adapter" {
+		return
+	}
+
+	// 判断 `config.yaml` 是否发生了变化
+	if oldCM.Data["config.yaml"] == curCM.Data["config.yaml"] {
+		return
+	}
+
+	// 获取所有的 Deployment 列表
+	deployments, err := ac.dLister.Deployments("").List(labels.Everything())
+	if err != nil {
+		klog.Errorf("Failed to list Deployments: %v", err)
+		return
+	}
+
+	// 遍历 Deployment，查找带有特定注解的对象
+	for _, deployment := range deployments {
+		if skipReconcile, _ := deployment.GetAnnotations()["skip-reconcile"]; skipReconcile == "true" {
+			continue
+		}
+		if annotation, exists := deployment.GetAnnotations()["hpa.caoyingjunz.io/targetCustomMetric"]; exists && annotation != "" {
+			key, err := cache.MetaNamespaceKeyFunc(deployment)
 			if err != nil {
-				klog.Errorf("Failed to list HPAs: %v\n", err)
-				return
+				klog.Errorf("Failed to generate key for Deployment: %v", err)
+				continue
 			}
-			for _, d := range ds {
-				annotations := d.GetAnnotations()
-				if annotations["hpa.caoyingjunz.io/targetCustomMetric"] != "" {
-					key, err := cache.MetaNamespaceKeyFunc(d)
-					if err != nil {
-						klog.Errorf("Failed to generate key for HPA: %v\n", err)
-						return
-					}
-					ac.queue.Add(key)
-					klog.Infof("HPA added to workqueue for resync: %s", d.Name)
-				}
-			}
+			// 将 Deployment 加入队列以进行重新同步
+			ac.queue.Add(key)
+			klog.Infof("Deployment %s added to workqueue for resync", deployment.Name)
 		}
 	}
 }
+
 func (ac *AutoscalerController) resolveControllerRef(namespace string, controllerRef *metav1.OwnerReference) *appsv1.Deployment {
 	if controllerRef.Kind != controller.Deployment {
 		return nil
