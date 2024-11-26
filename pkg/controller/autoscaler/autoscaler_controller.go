@@ -135,6 +135,7 @@ func NewAutoscalerController(
 
 	ac.dListerSynced = dInformer.Informer().HasSynced
 	ac.hpaListerSynced = hpaInformer.Informer().HasSynced
+	ac.cmListerSynced = cmInformer.Informer().HasSynced
 
 	return ac, nil
 }
@@ -148,7 +149,7 @@ func (ac *AutoscalerController) Run(workers int, stopCh <-chan struct{}) {
 	defer klog.Infof("Shutting down Pixiu Autoscaler Controller")
 
 	// Wait for all involved caches to be synced, before processing items from the queue is started
-	if !cache.WaitForNamedCacheSync("pixiu-autoscaler-controller", stopCh, ac.dListerSynced, ac.hpaListerSynced) {
+	if !cache.WaitForNamedCacheSync("pixiu-autoscaler-controller", stopCh, ac.dListerSynced, ac.hpaListerSynced, ac.cmListerSynced) {
 		return
 	}
 
