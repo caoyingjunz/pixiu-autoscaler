@@ -215,10 +215,9 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 }
 
 func (ac *AutoscalerController) fetchPrometheusAdapterConfig(d *appsv1.Deployment) (*v1.ConfigMap, error) {
-	//cm, err := ac.client.CoreV1().ConfigMaps("default").Get(context.TODO(), "prometheus-adapter", metav1.GetOptions{})
-	cms, err := ac.cmLister.ConfigMaps("default").List(labels.Everything())
+	cms, err := ac.cmLister.ConfigMaps("").List(labels.Everything())
 	if err != nil {
-		ac.eventRecorder.Eventf(d, v1.EventTypeWarning, "FailedListCM", fmt.Sprintf("Failed extract list CM namespace: %s", "default"))
+		ac.eventRecorder.Eventf(d, v1.EventTypeWarning, "FailedListCM", fmt.Sprintf("Failed extract list CM"))
 		return nil, err
 	}
 	// 遍历列表，找到特定的 ConfigMap
@@ -230,22 +229,43 @@ func (ac *AutoscalerController) fetchPrometheusAdapterConfig(d *appsv1.Deploymen
 		}
 	}
 	if targetConfigMap == nil {
-		ac.eventRecorder.Eventf(d, v1.EventTypeWarning, "FailedGetCM", fmt.Sprintf("Failed extract get CM %s/%s", "default", "prometheus-adapter"))
+		ac.eventRecorder.Eventf(d, v1.EventTypeWarning, "FailedGetCM", fmt.Sprintf("Failed extract get CM %s", "prometheus-adapter"))
 		return nil, err
 	}
 	return targetConfigMap, nil
 }
 
 func (ac *AutoscalerController) restartPrometheusAdapterDeployment() error {
-	deployment, err := ac.client.AppsV1().Deployments("default").Get(context.TODO(), "prometheus-adapter", metav1.GetOptions{})
+	// 获取所有 Deployments
+	deployments, err := ac.dLister.Deployments("default").List(labels.Everything())
 	if err != nil {
-		return fmt.Errorf("failed to get deployment prometheus-adapter: %v", err)
+		return fmt.Errorf("failed to get deployments in default namespace: %v", err)
 	}
+
+	// 遍历 Deployments，找到 prometheus-adapter 部署
+	var deployment *appsv1.Deployment
+	for _, dep := range deployments {
+		if dep.Name == "prometheus-adapter" {
+			deployment = dep
+			break
+		}
+	}
+
+	// 如果没有找到 prometheus-adapter 部署，返回错误
+	if deployment == nil {
+		return fmt.Errorf("prometheus-adapter deployment not found")
+	}
+
+	// 确保 Annotations 不为 nil
 	if deployment.Spec.Template.Annotations == nil {
 		deployment.Spec.Template.Annotations = make(map[string]string)
 	}
+
+	// 设置重启时间
 	deployment.Spec.Template.Annotations["kubectl.kubernetes.io/restartedAt"] = metav1.Now().Format("2006-01-02T15:04:05Z")
-	_, err = ac.client.AppsV1().Deployments("default").Update(context.TODO(), deployment, metav1.UpdateOptions{})
+
+	// 更新部署
+	_, err = ac.client.AppsV1().Deployments(deployment.Namespace).Update(context.TODO(), deployment, metav1.UpdateOptions{})
 	return err
 }
 
@@ -302,9 +322,9 @@ func (ac *AutoscalerController) sync(d *appsv1.Deployment, hpaList []*autoscalin
 			// 更新 ConfigMap
 			configMap.Data["config.yaml"] = string(updatedYaml)
 			configMap.Annotations["skip-reconcile"] = "true"
-			_, err = ac.client.CoreV1().ConfigMaps("default").Update(context.TODO(), configMap, metav1.UpdateOptions{})
+			_, err = ac.client.CoreV1().ConfigMaps(configMap.Namespace).Update(context.TODO(), configMap, metav1.UpdateOptions{})
 			if err != nil {
-				ac.eventRecorder.Eventf(d, v1.EventTypeWarning, "FailedSetCM", fmt.Sprintf("Failed extract set CM %s/%s", "default", "prometheus-adapter"))
+				ac.eventRecorder.Eventf(d, v1.EventTypeWarning, "FailedSetCM", fmt.Sprintf("Failed extract set CM %s/%s", configMap.Namespace, "prometheus-adapter"))
 				return err
 			}
 			//err = ac.restartPrometheusAdapterDeployment()
@@ -314,7 +334,7 @@ func (ac *AutoscalerController) sync(d *appsv1.Deployment, hpaList []*autoscalin
 			}
 
 			klog.Infof("新规则已添加到 ExternalRules 并更新到 ConfigMap")
-			klog.Infof("Deployment %s/%s 已成功重启\n", "default", "prometheus-adapter")
+			klog.Infof("Deployment %s/%s 已成功重启\n", configMap.Namespace, "prometheus-adapter")
 		} else {
 			klog.Infof("规则已存在，跳过添加")
 		}
@@ -405,7 +425,7 @@ func (ac *AutoscalerController) sync(d *appsv1.Deployment, hpaList []*autoscalin
 							return err
 						}
 						klog.Infof("ConfigMap %s/%s updated successfully, rule with SeriesQuery %s removed", configMap.Namespace, configMap.Name, metricName)
-						klog.Infof("Deployment %s/%s 已成功重启\n", "default", "prometheus-adapter")
+						klog.Infof("Deployment %s/%s 已成功重启\n", configMap.Namespace, "prometheus-adapter")
 					}
 				}
 			}
