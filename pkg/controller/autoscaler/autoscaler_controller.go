@@ -644,22 +644,11 @@ func (ac *AutoscalerController) deleteHPA(obj interface{}) {
 }
 
 func (ac *AutoscalerController) updateCM(old, cur interface{}) {
-	oldCM, okOld := old.(*corev1.ConfigMap)
-	curCM, okCur := cur.(*corev1.ConfigMap)
+	oldCM := old.(*corev1.ConfigMap)
+	curCM := cur.(*corev1.ConfigMap)
 
-	// 检查类型断言是否成功，避免潜在的 panic
-	if !okOld || !okCur {
-		klog.Errorf("Failed to cast objects to ConfigMap")
-		return
-	}
-
-	// 确保关注的 ConfigMap 名称一致
+	// 如果不是prometheus-adapter配置文件修改就返回
 	if oldCM.Name != "prometheus-adapter" || curCM.Name != "prometheus-adapter" {
-		return
-	}
-
-	// 判断 `config.yaml` 是否发生了变化
-	if oldCM.Data["config.yaml"] == curCM.Data["config.yaml"] {
 		return
 	}
 
