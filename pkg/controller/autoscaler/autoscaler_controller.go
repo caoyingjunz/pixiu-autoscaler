@@ -237,9 +237,9 @@ func (ac *AutoscalerController) fetchPrometheusAdapterConfig(d *appsv1.Deploymen
 
 func (ac *AutoscalerController) restartPrometheusAdapterDeployment() error {
 	// 获取所有 Deployments
-	deployments, err := ac.dLister.Deployments("default").List(labels.Everything())
+	deployments, err := ac.dLister.Deployments("").List(labels.Everything())
 	if err != nil {
-		return fmt.Errorf("failed to get deployments in default namespace: %v", err)
+		return fmt.Errorf("failed to get deployments : %v", err)
 	}
 
 	// 遍历 Deployments，找到 prometheus-adapter 部署
