@@ -52,6 +52,9 @@ const (
 
 	Deployment              string = "Deployment"
 	HorizontalPodAutoscaler string = "HorizontalPodAutoscaler"
+
+	DesireConfigMapName string = "prometheus-adapter"
+	ExternalRuleKey     string = "externalRules"
 )
 
 type PrometheusAdapterConfig struct {
