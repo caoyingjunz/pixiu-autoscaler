@@ -228,17 +228,14 @@ func (ac *AutoscalerController) syncConfigMaps(key string) error {
 		return nil
 	}
 
-	deployments, err := ac.dLister.List(labels.Everything())
+	hpas, err := ac.hpaLister.List(labels.Set{controller.PrometheusCustomMetric: "true"}.AsSelector())
 	if err != nil {
 		return err
 	}
-	// 构造最新的 externalRules
-	externalRulesData, err := ac.getExternalRulesForDeployments(deployments)
-	if err != nil {
-		return err
+	for _, h := range hpas {
+		fmt.Println(h.Name)
 	}
 
-	fmt.Println(externalRulesData)
 	return nil
 }
 
@@ -301,9 +298,7 @@ func (ac *AutoscalerController) sync(d *appsv1.Deployment, hpaList []*autoscalin
 		ac.eventRecorder.Eventf(d, v1.EventTypeWarning, "FailedNewestHPA", fmt.Sprintf("Failed extract newest HPA %s/%s", d.GetNamespace(), d.GetName()))
 		return err
 	}
-	if ac.IsCustomMetricHPA(d) {
-		newHPA.Labels[controller.PrometheusCustomMetric] = "true"
-	}
+	newHPA.Labels[controller.PrometheusCustomMetric] = "true"
 
 	if len(hpaList) == 0 {
 		// 新建
@@ -593,10 +588,10 @@ func (ac *AutoscalerController) updateConfigMap(old, cur interface{}) {
 	if oldCM.ResourceVersion == curCM.ResourceVersion {
 		return
 	}
-	if reflect.DeepEqual(oldCM.Data[controller.ExternalRuleKey], curCM.Data[controller.ExternalRuleKey]) {
-		return
-	}
-	klog.V(4).InfoS("Updating configmap", "configmap", klog.KObj(oldCM))
+	//if reflect.DeepEqual(oldCM.Data[controller.ExternalRuleKey], curCM.Data[controller.ExternalRuleKey]) {
+	//	return
+	//}
+	//klog.V(4).InfoS("Updating configmap", "configmap", klog.KObj(oldCM))
 
 	ac.enqueueConfigMap(curCM)
 }
