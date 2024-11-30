@@ -332,6 +332,11 @@ func (ac *AutoscalerController) sync(d *appsv1.Deployment, hpaList []*autoscalin
 		ac.eventRecorder.Eventf(newHPA, v1.EventTypeNormal, "UpdateHPA", fmt.Sprintf("Update HPA %s/%s success", newHPA.Namespace, newHPA.Name))
 	}
 
+	// TODO: 触发 cm 改动生效
+	if ac.IsCustomMetricHPA(d) {
+		//	触发
+	}
+
 	return nil
 }
 
