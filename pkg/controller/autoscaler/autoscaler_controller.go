@@ -108,6 +108,7 @@ func NewAutoscalerController(
 		client:        client,
 		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "pixiu-autoscaler"}),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "pixiu"),
+		cmQueue:       workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "pixiu"),
 		items:         controller.NewItems(),
 	}
 
@@ -299,6 +300,9 @@ func (ac *AutoscalerController) sync(d *appsv1.Deployment, hpaList []*autoscalin
 	if err != nil {
 		ac.eventRecorder.Eventf(d, v1.EventTypeWarning, "FailedNewestHPA", fmt.Sprintf("Failed extract newest HPA %s/%s", d.GetNamespace(), d.GetName()))
 		return err
+	}
+	if ac.IsCustomMetricHPA(d) {
+		newHPA.Labels[controller.PrometheusCustomMetric] = "true"
 	}
 
 	if len(hpaList) == 0 {
