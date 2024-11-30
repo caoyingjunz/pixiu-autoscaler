@@ -22,7 +22,6 @@ import (
 	"reflect"
 	"time"
 
-	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	"k8s.io/api/core/v1"
@@ -175,6 +174,17 @@ func (ac *AutoscalerController) Run(workers int, stopCh <-chan struct{}) {
 	<-stopCh
 }
 
+// IsCustomMetricHPA 判断 deployment 是否维护自定位指标的 HPA
+func (ac *AutoscalerController) IsCustomMetricHPA(d *appsv1.Deployment) bool {
+	if !ac.IsDeploymentControlHPA(d) {
+		return false
+	}
+
+	annotations := d.GetAnnotations()
+	_, ok := annotations[controller.PrometheusCustomMetric]
+	return ok
+}
+
 // IsDeploymentControlHPA 判断 deployment 是否维护 HPA
 func (ac *AutoscalerController) IsDeploymentControlHPA(d *appsv1.Deployment) bool {
 	annotations := d.GetAnnotations()
@@ -232,8 +242,10 @@ func (ac *AutoscalerController) syncConfigMaps(key string) error {
 }
 
 func (ac *AutoscalerController) getExternalRulesForDeployments(deployments []*appsv1.Deployment) (string, error) {
+	var ret []*appsv1.Deployment
 	for _, deployment := range deployments {
-		if annotation, exists := deployment.GetAnnotations()["hpa.caoyingjunz.io/targetCustomMetric"]; exists && annotation != "" {
+		if ac.IsCustomMetricHPA(deployment) {
+			ret = append(ret, deployment)
 		}
 	}
 
@@ -277,61 +289,6 @@ func (ac *AutoscalerController) syncAutoscalers(key string) error {
 	return ac.sync(d, hpaList)
 }
 
-func (ac *AutoscalerController) fetchPrometheusAdapterConfig(d *appsv1.Deployment) (*v1.ConfigMap, error) {
-	cms, err := ac.cmLister.ConfigMaps("").List(labels.Everything())
-	if err != nil {
-		ac.eventRecorder.Eventf(d, v1.EventTypeWarning, "FailedListCM", fmt.Sprintf("Failed extract list CM"))
-		return nil, err
-	}
-	// 遍历列表，找到特定的 ConfigMap
-	var targetConfigMap *v1.ConfigMap
-	for _, cm := range cms {
-		if cm.Name == "prometheus-adapter" {
-			targetConfigMap = cm
-			break
-		}
-	}
-	if targetConfigMap == nil {
-		ac.eventRecorder.Eventf(d, v1.EventTypeWarning, "FailedGetCM", fmt.Sprintf("Failed extract get CM %s", "prometheus-adapter"))
-		return nil, err
-	}
-	return targetConfigMap, nil
-}
-
-func (ac *AutoscalerController) restartPrometheusAdapterDeployment() error {
-	// 获取所有 Deployments
-	deployments, err := ac.dLister.Deployments("").List(labels.Everything())
-	if err != nil {
-		return fmt.Errorf("failed to get deployments : %v", err)
-	}
-
-	// 遍历 Deployments，找到 prometheus-adapter 部署
-	var deployment *appsv1.Deployment
-	for _, dep := range deployments {
-		if dep.Name == "prometheus-adapter" {
-			deployment = dep
-			break
-		}
-	}
-
-	// 如果没有找到 prometheus-adapter 部署，返回错误
-	if deployment == nil {
-		return fmt.Errorf("prometheus-adapter deployment not found")
-	}
-
-	// 确保 Annotations 不为 nil
-	if deployment.Spec.Template.Annotations == nil {
-		deployment.Spec.Template.Annotations = make(map[string]string)
-	}
-
-	// 设置重启时间
-	deployment.Spec.Template.Annotations["kubectl.kubernetes.io/restartedAt"] = metav1.Now().Format("2006-01-02T15:04:05Z")
-
-	// 更新部署
-	_, err = ac.client.AppsV1().Deployments(deployment.Namespace).Update(context.TODO(), deployment, metav1.UpdateOptions{})
-	return err
-}
-
 func (ac *AutoscalerController) sync(d *appsv1.Deployment, hpaList []*autoscalingv2.HorizontalPodAutoscaler) error {
 	// 1. deployment 存在，但是 hpa 注释不存在 => 移除已存在的 hpa
 	if !ac.IsDeploymentControlHPA(d) {
@@ -342,65 +299,6 @@ func (ac *AutoscalerController) sync(d *appsv1.Deployment, hpaList []*autoscalin
 	if err != nil {
 		ac.eventRecorder.Eventf(d, v1.EventTypeWarning, "FailedNewestHPA", fmt.Sprintf("Failed extract newest HPA %s/%s", d.GetNamespace(), d.GetName()))
 		return err
-	}
-	if newHPA.Spec.Metrics[0].External != nil {
-		//获取ConfigMap
-		configMap, err := ac.fetchPrometheusAdapterConfig(d)
-		if err != nil {
-			return err
-		}
-		var config controller.PrometheusAdapterConfig
-		err = yaml.Unmarshal([]byte(configMap.Data["config.yaml"]), &config)
-		if err != nil {
-			klog.Errorf("Failed to unmarshal Prometheus adapter config: %v", err)
-			return err
-		}
-		exists := false
-		for _, v := range config.ExternalRules {
-			if v.SeriesQuery == newHPA.Spec.Metrics[0].External.Metric.Name {
-				exists = true
-				break
-			}
-		}
-		if !exists {
-			newRule := controller.ExternalRule{
-				MetricsQuery: "<<.Series>>",
-				Name: controller.RuleName{
-					As:      "",
-					Matches: "",
-				},
-				Resources: controller.ResourceMap{
-					Overrides: map[string]controller.ResourceOverride{
-						"namespace": {Resource: "namespace"},
-					},
-				},
-				SeriesQuery: newHPA.Spec.Metrics[0].External.Metric.Name,
-			}
-			config.ExternalRules = append(config.ExternalRules, newRule)
-			updatedYaml, err := yaml.Marshal(&config)
-			if err != nil {
-				klog.Errorf("Failed to marshal Prometheus adapter config: %v", err)
-				return err
-			}
-			// 更新 ConfigMap
-			configMap.Data["config.yaml"] = string(updatedYaml)
-			configMap.Annotations["skip-reconcile"] = "true"
-			_, err = ac.client.CoreV1().ConfigMaps(configMap.Namespace).Update(context.TODO(), configMap, metav1.UpdateOptions{})
-			if err != nil {
-				ac.eventRecorder.Eventf(d, v1.EventTypeWarning, "FailedSetCM", fmt.Sprintf("Failed extract set CM %s/%s", configMap.Namespace, "prometheus-adapter"))
-				return err
-			}
-			//err = ac.restartPrometheusAdapterDeployment()
-			if err != nil {
-				klog.ErrorS(err, "Failed to restart Prometheus adapter deployment")
-				return err
-			}
-
-			klog.Infof("新规则已添加到 ExternalRules 并更新到 ConfigMap")
-			klog.Infof("Deployment %s/%s 已成功重启\n", configMap.Namespace, "prometheus-adapter")
-		} else {
-			klog.Infof("规则已存在，跳过添加")
-		}
 	}
 
 	if len(hpaList) == 0 {
@@ -421,78 +319,6 @@ func (ac *AutoscalerController) sync(d *appsv1.Deployment, hpaList []*autoscalin
 		if reflect.DeepEqual(oldHPA.Spec, newHPA.Spec) {
 			klog.V(2).Infof("HPA: %s/%s is not changed", newHPA.Namespace, newHPA.Name)
 			return nil
-		}
-		if oldHPA.Spec.Metrics[0].External != nil {
-			hpaList, err := ac.client.AutoscalingV2().HorizontalPodAutoscalers("").List(context.TODO(), metav1.ListOptions{})
-			if err != nil {
-				return err
-			}
-			// 定义一个 map 来存储 hpaList 中 External.Metric.Name 出现的次数
-			metricNameCount := make(map[string]int)
-
-			// 遍历 hpaList，将 Metric.Name 的出现次数统计到 map 中
-			for _, hpa := range hpaList.Items {
-				if len(hpa.Spec.Metrics) > 0 && hpa.Spec.Metrics[0].External != nil {
-					metricName := hpa.Spec.Metrics[0].External.Metric.Name
-					metricNameCount[metricName]++
-				}
-			}
-
-			// 检查 oldHPA.Spec.Metrics 是否有值，并判断是否需要处理
-			if len(oldHPA.Spec.Metrics) > 0 && oldHPA.Spec.Metrics[0].External != nil {
-				metricName := oldHPA.Spec.Metrics[0].External.Metric.Name
-				if count, exists := metricNameCount[metricName]; exists && count == 1 {
-					// 获取 Prometheus Adapter 的 ConfigMap
-					configMap, err := ac.fetchPrometheusAdapterConfig(d)
-					if err != nil {
-						return err
-					}
-
-					// 解析 ConfigMap 中的 ExternalRules
-					var config controller.PrometheusAdapterConfig
-					err = yaml.Unmarshal([]byte(configMap.Data["config.yaml"]), &config)
-					if err != nil {
-						klog.Errorf("Failed to unmarshal Prometheus adapter config: %v", err)
-						return err
-					}
-
-					// 过滤掉与 oldHPA.Spec.Metrics[0].External.Metric.Name 匹配的规则
-					var updatedRules []controller.ExternalRule
-					exists := false
-					for _, rule := range config.ExternalRules {
-						if rule.SeriesQuery != metricName {
-							updatedRules = append(updatedRules, rule)
-						} else {
-							exists = true
-							klog.Infof("Removed rule with SeriesQuery: %s", rule.SeriesQuery)
-						}
-					}
-					if exists {
-
-						config.ExternalRules = updatedRules
-
-						// 更新 ConfigMap
-						updatedYaml, err := yaml.Marshal(&config)
-						if err != nil {
-							klog.Errorf("Failed to marshal updated Prometheus adapter config: %v", err)
-							return err
-						}
-						configMap.Data["config.yaml"] = string(updatedYaml)
-						_, err = ac.fetchPrometheusAdapterConfig(d)
-						if err != nil {
-							klog.Errorf("Failed to update ConfigMap %s/%s: %v", configMap.Namespace, configMap.Name, err)
-							return err
-						}
-						err = ac.restartPrometheusAdapterDeployment()
-						if err != nil {
-							return err
-						}
-						klog.Infof("ConfigMap %s/%s updated successfully, rule with SeriesQuery %s removed", configMap.Namespace, configMap.Name, metricName)
-						klog.Infof("Deployment %s/%s 已成功重启\n", configMap.Namespace, "prometheus-adapter")
-					}
-				}
-			}
-
 		}
 		if _, err = ac.client.AutoscalingV2().HorizontalPodAutoscalers(newHPA.Namespace).Update(context.TODO(), newHPA, metav1.UpdateOptions{}); err != nil {
 			if !errors.IsNotFound(err) {

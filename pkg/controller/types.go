@@ -36,8 +36,8 @@ const (
 	memoryAverageUtilization     = "memory." + PixiuRootPrefix + PixiuSeparator + targetAverageUtilization
 	prometheusAverageUtilization = "prometheus." + PixiuRootPrefix + PixiuSeparator + targetAverageUtilization
 
-	// 指标来自 prometheus 时，需要指定指标名称
-	prometheusCustomMetric = PixiuRootPrefix + PixiuSeparator + "targetCustomMetric"
+	// PrometheusCustomMetric 指标来自 prometheus 时，需要指定指标名称
+	PrometheusCustomMetric = PixiuRootPrefix + PixiuSeparator + "targetCustomMetric"
 
 	// CPU, in cores. (500m = .5 cores)
 	// Memory, in bytes. (500Gi = 500GiB = 500 * 1024 * 1024 * 1024)
