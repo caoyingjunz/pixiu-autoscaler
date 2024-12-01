@@ -360,13 +360,13 @@ func (ac *AutoscalerController) Notify(d *appsv1.Deployment) error {
 		op = "add"
 	}
 
-	cm.Annotations[controller.NotifyAt] = time.Now().String()
+	cm.Annotations[controller.NotifyAt] = time.Now().Format("2006-01-02T15:04:05Z")
 	raw, err := json.Marshal(cm.Annotations)
 	if err != nil {
 		return err
 	}
 	patchPayload := fmt.Sprintf(patchPayloadTemplate, op, raw)
-	if _, err = ac.client.AutoscalingV2().HorizontalPodAutoscalers(ns).Patch(context.Background(), controller.DesireConfigMapName, types.JSONPatchType, []byte(patchPayload), metav1.PatchOptions{}); err != nil {
+	if _, err = ac.client.CoreV1().ConfigMaps(ns).Patch(context.Background(), controller.DesireConfigMapName, types.JSONPatchType, []byte(patchPayload), metav1.PatchOptions{}); err != nil {
 		klog.Errorf("failed to patch configmap: %v", err)
 		return err
 	}
