@@ -18,6 +18,7 @@ package autoscaler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"time"
@@ -29,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	appsinformers "k8s.io/client-go/informers/apps/v1"
@@ -332,9 +334,41 @@ func (ac *AutoscalerController) sync(d *appsv1.Deployment, hpaList []*autoscalin
 		ac.eventRecorder.Eventf(newHPA, v1.EventTypeNormal, "UpdateHPA", fmt.Sprintf("Update HPA %s/%s success", newHPA.Namespace, newHPA.Name))
 	}
 
-	// TODO: 触发 cm 改动生效
-	if ac.IsCustomMetricHPA(d) {
-		//	触发
+	return ac.Notify(d)
+}
+
+func (ac *AutoscalerController) Notify(d *appsv1.Deployment) error {
+	if !ac.IsCustomMetricHPA(d) {
+		return nil
+	}
+
+	// TODO: 抽成变量
+	ns := "pixiu-system"
+	cm, err := ac.cmLister.ConfigMaps(ns).Get(controller.DesireConfigMapName)
+	if err != nil {
+		return err
+	}
+	patchPayloadTemplate :=
+		`[{
+        "op": "%s",
+        "path": "/metadata/annotations",
+        "value": %s
+    }]`
+	op := "replace"
+	if len(cm.Annotations) == 0 {
+		cm.Annotations = map[string]string{}
+		op = "add"
+	}
+
+	cm.Annotations[controller.NotifyAt] = time.Now().String()
+	raw, err := json.Marshal(cm.Annotations)
+	if err != nil {
+		return err
+	}
+	patchPayload := fmt.Sprintf(patchPayloadTemplate, op, raw)
+	if _, err = ac.client.AutoscalingV2().HorizontalPodAutoscalers(ns).Patch(context.Background(), controller.DesireConfigMapName, types.JSONPatchType, []byte(patchPayload), metav1.PatchOptions{}); err != nil {
+		klog.Errorf("failed to patch configmap: %v", err)
+		return err
 	}
 
 	return nil

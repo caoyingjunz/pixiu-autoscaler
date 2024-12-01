@@ -54,6 +54,7 @@ const (
 	HorizontalPodAutoscaler string = "HorizontalPodAutoscaler"
 
 	DesireConfigMapName string = "prometheus-adapter"
+	NotifyAt            string = PixiuRootPrefix + PixiuSeparator + "notifyAt"
 	ExternalRuleKey     string = "externalRules"
 )
 
