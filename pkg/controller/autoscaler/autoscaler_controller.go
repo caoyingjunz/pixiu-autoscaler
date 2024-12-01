@@ -300,10 +300,9 @@ func (ac *AutoscalerController) sync(d *appsv1.Deployment, hpaList []*autoscalin
 		ac.eventRecorder.Eventf(d, v1.EventTypeWarning, "FailedNewestHPA", fmt.Sprintf("Failed extract newest HPA %s/%s", d.GetNamespace(), d.GetName()))
 		return err
 	}
-	//if ac.IsCustomMetricHPA(d) {
-	//	newHPA.Labels[controller.PrometheusCustomMetric] = "true"
-	//}
-	newHPA.Labels[controller.PrometheusCustomMetric] = "true"
+	if ac.IsCustomMetricHPA(d) {
+		newHPA.Labels[controller.PrometheusCustomMetric] = "true"
+	}
 
 	if len(hpaList) == 0 {
 		// 新建
