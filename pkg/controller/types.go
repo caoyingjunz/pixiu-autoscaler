@@ -55,7 +55,6 @@ const (
 
 	DesireConfigMapName string = "prometheus-adapter"
 	NotifyAt            string = PixiuRootPrefix + PixiuSeparator + "notifyAt"
-	ExternalRuleKey     string = "externalRules"
 )
 
 type PrometheusAdapterConfig struct {

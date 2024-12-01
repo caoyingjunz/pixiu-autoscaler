@@ -215,6 +215,39 @@ func (ac *AutoscalerController) syncConfigMaps(key string) error {
 		return nil
 	}
 
+	hpaList, err := ac.hpaLister.List(labels.Set{controller.PrometheusCustomMetric: "true"}.AsSelector())
+	if err != nil {
+		return err
+	}
+	var externalRules []controller.ExternalRule
+	for _, h := range hpaList {
+		// 无需检查，hpa API已做个检验，此处为遵守coding规范
+		metrics := h.Spec.Metrics
+		if len(metrics) == 0 {
+			return fmt.Errorf("no metric found in hpa(%s)", h.Name)
+		}
+		metric := metrics[0]
+		if metric.External == nil {
+			return fmt.Errorf("no external metric found in hpa(%s)", h.Name)
+		}
+
+		externalRules = append(externalRules, controller.ExternalRule{
+			MetricsQuery: "<<.Series>>",
+			Name: controller.RuleName{
+				As:      "",
+				Matches: "",
+			},
+			Resources: controller.ResourceMap{
+				Overrides: map[string]controller.ResourceOverride{
+					"namespace": {Resource: "namespace"},
+				},
+			},
+			SeriesQuery: metric.External.Metric.Name,
+		})
+	}
+
+	fmt.Println("externalRules", externalRules)
+
 	configMap, err := ac.cmLister.ConfigMaps(namespace).Get(name)
 	if errors.IsNotFound(err) {
 		klog.V(2).InfoS("configmap has been deleted", "configmap", klog.KRef(namespace, name))
@@ -230,26 +263,9 @@ func (ac *AutoscalerController) syncConfigMaps(key string) error {
 		return nil
 	}
 
-	hpas, err := ac.hpaLister.List(labels.Set{controller.PrometheusCustomMetric: "true"}.AsSelector())
-	if err != nil {
-		return err
-	}
-	for _, h := range hpas {
-		fmt.Println(h.Name)
-	}
+	fmt.Println(",cm.Data", cm.Data)
 
 	return nil
-}
-
-func (ac *AutoscalerController) getExternalRulesForDeployments(deployments []*appsv1.Deployment) (string, error) {
-	var ret []*appsv1.Deployment
-	for _, deployment := range deployments {
-		if ac.IsCustomMetricHPA(deployment) {
-			ret = append(ret, deployment)
-		}
-	}
-
-	return "", nil
 }
 
 // syncAutoscaler will sync the autoscaler with the given key.
