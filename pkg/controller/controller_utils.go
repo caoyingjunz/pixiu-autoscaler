@@ -248,7 +248,7 @@ func parseMetricSpecFor(target string, metricType string, metricValue string, an
 }
 
 func parseMetricSpecForPrometheus(target string, metricType string, metricValue string, annotations map[string]string) (autoscalingv2.MetricSpec, error) {
-	name, ok := annotations[prometheusCustomMetric]
+	name, ok := annotations[PrometheusCustomMetric]
 	if !ok {
 		return autoscalingv2.MetricSpec{}, fmt.Errorf("failed to get targetCustomMetric from annotations")
 	}

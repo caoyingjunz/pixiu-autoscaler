@@ -18,25 +18,31 @@ package autoscaler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"time"
 
+	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	"k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	appsinformers "k8s.io/client-go/informers/apps/v1"
 	autoscalinginformers "k8s.io/client-go/informers/autoscaling/v2"
+	coreinformers "k8s.io/client-go/informers/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
 	appslisters "k8s.io/client-go/listers/apps/v1"
 	autoscalinglisters "k8s.io/client-go/listers/autoscaling/v2"
+	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -59,18 +65,27 @@ type AutoscalerController struct {
 	syncHandler       func(dKey string) error
 	enqueueDeployment func(deployment *appsv1.Deployment)
 
+	syncConfigMapHandler func(dKey string) error
+	enqueueConfigMap     func(cm *corev1.ConfigMap)
+
 	// dLister can list/get deployments from the shared informer's store
 	dLister appslisters.DeploymentLister
 	// hpaLister is able to list/get HPAs from the shared informer's cache
 	hpaLister autoscalinglisters.HorizontalPodAutoscalerLister
+	// cmLister is able to list/get Configmaps from the shared informer's cache
+	cmLister corelisters.ConfigMapLister
 
 	// dListerSynced returns true if the Deployment store has been synced at least once.
 	dListerSynced cache.InformerSynced
 	// hpaListerSynced returns true if the HPA store has been synced at least once.
 	hpaListerSynced cache.InformerSynced
+	// cmListerSynced returns true if the configmap store has been synced at least once.
+	cmListerSynced cache.InformerSynced
 
 	// AutoscalerController that need to be synced
 	queue workqueue.RateLimitingInterface
+
+	cmQueue workqueue.RateLimitingInterface
 
 	// Store and returns a reference to an empty store.
 	items map[string]controller.Empty
@@ -80,6 +95,7 @@ type AutoscalerController struct {
 func NewAutoscalerController(
 	dInformer appsinformers.DeploymentInformer,
 	hpaInformer autoscalinginformers.HorizontalPodAutoscalerInformer,
+	cmInformer coreinformers.ConfigMapInformer,
 	client clientset.Interface) (*AutoscalerController, error) {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -95,6 +111,7 @@ func NewAutoscalerController(
 		client:        client,
 		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "pixiu-autoscaler"}),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "pixiu"),
+		cmQueue:       workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "pixiu"),
 		items:         controller.NewItems(),
 	}
 
@@ -112,15 +129,28 @@ func NewAutoscalerController(
 		DeleteFunc: ac.deleteHPA,
 	})
 
+	// ConfigMap
+	cmInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ac.addConfigMap,
+		UpdateFunc: ac.updateConfigMap,
+		DeleteFunc: ac.deleteConfigMap,
+	})
+
 	ac.dLister = dInformer.Lister()
 	ac.hpaLister = hpaInformer.Lister()
+	ac.cmLister = cmInformer.Lister()
 
 	// syncAutoscalers
 	ac.syncHandler = ac.syncAutoscalers
 	ac.enqueueDeployment = ac.enqueue
 
+	// syncConfigMaps
+	ac.syncConfigMapHandler = ac.syncConfigMaps
+	ac.enqueueConfigMap = ac.enqueueCM
+
 	ac.dListerSynced = dInformer.Informer().HasSynced
 	ac.hpaListerSynced = hpaInformer.Informer().HasSynced
+	ac.cmListerSynced = cmInformer.Informer().HasSynced
 
 	return ac, nil
 }
@@ -134,15 +164,29 @@ func (ac *AutoscalerController) Run(workers int, stopCh <-chan struct{}) {
 	defer klog.Infof("Shutting down Pixiu Autoscaler Controller")
 
 	// Wait for all involved caches to be synced, before processing items from the queue is started
-	if !cache.WaitForNamedCacheSync("pixiu-autoscaler-controller", stopCh, ac.dListerSynced, ac.hpaListerSynced) {
+	if !cache.WaitForNamedCacheSync("pixiu-autoscaler-controller", stopCh, ac.dListerSynced, ac.hpaListerSynced, ac.cmListerSynced) {
 		return
 	}
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ac.worker, time.Second, stopCh)
 	}
+	for i := 0; i < workers; i++ {
+		go wait.Until(ac.configMapWorker, time.Second, stopCh)
+	}
 
 	<-stopCh
+}
+
+// IsCustomMetricHPA 判断 deployment 是否维护自定位指标的 HPA
+func (ac *AutoscalerController) IsCustomMetricHPA(d *appsv1.Deployment) bool {
+	if !ac.IsDeploymentControlHPA(d) {
+		return false
+	}
+
+	annotations := d.GetAnnotations()
+	_, ok := annotations[controller.PrometheusCustomMetric]
+	return ok
 }
 
 // IsDeploymentControlHPA 判断 deployment 是否维护 HPA
@@ -160,6 +204,122 @@ func (ac *AutoscalerController) IsDeploymentControlHPA(d *appsv1.Deployment) boo
 	}
 
 	return false
+}
+
+func (ac *AutoscalerController) syncConfigMaps(key string) error {
+	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		klog.ErrorS(err, "Failed to split meta namespace cache key", "cacheKey", key)
+		return err
+	}
+	if name != controller.DesireConfigMapName {
+		return nil
+	}
+
+	hpaList, err := ac.hpaLister.List(labels.Set{controller.PrometheusCustomMetric: "true"}.AsSelector())
+	if err != nil {
+		return err
+	}
+	var externalRules []controller.ExternalRule
+	for _, h := range hpaList {
+		// 无需检查，hpa API已做个检验，此处为遵守coding规范
+		metrics := h.Spec.Metrics
+		if len(metrics) == 0 {
+			return fmt.Errorf("no metric found in hpa(%s)", h.Name)
+		}
+		metric := metrics[0]
+		if metric.External == nil {
+			return fmt.Errorf("no external metric found in hpa(%s)", h.Name)
+		}
+
+		externalRules = append(externalRules, controller.ExternalRule{
+			MetricsQuery: "<<.Series>>",
+			Name: controller.RuleName{
+				As:      "",
+				Matches: "",
+			},
+			Resources: controller.ResourceMap{
+				Overrides: map[string]controller.ResourceOverride{
+					"namespace": {Resource: "namespace"},
+				},
+			},
+			SeriesQuery: metric.External.Metric.Name,
+		})
+	}
+
+	configMap, err := ac.cmLister.ConfigMaps(namespace).Get(name)
+	if errors.IsNotFound(err) {
+		klog.V(2).InfoS("configmap has been deleted", "configmap", klog.KRef(namespace, name))
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	// 深拷贝，避免缓存被修改
+	cm := configMap.DeepCopy()
+	if cm.DeletionTimestamp != nil {
+		return nil
+	}
+
+	var cfg controller.PrometheusAdapterConfig
+	if err = yaml.Unmarshal([]byte(cm.Data["config.yaml"]), &cfg); err != nil {
+		klog.Errorf("Failed to unmarshal adapter configmap: %v", err)
+		return err
+	}
+
+	// 退出，如果 externalRules 配置未发生变化则直接退出
+	if reflect.DeepEqual(cfg.ExternalRules, externalRules) {
+		return nil
+	}
+
+	cfg.ExternalRules = externalRules
+	newConfig, err := yaml.Marshal(&cfg)
+	if err != nil {
+		klog.Errorf("Failed to marshal adapter config: %v", err)
+		return err
+	}
+
+	cm.Data["config.yaml"] = string(newConfig)
+	_, err = ac.client.CoreV1().ConfigMaps(cm.Namespace).Update(context.TODO(), cm, metav1.UpdateOptions{})
+	if err != nil {
+		return err
+	}
+
+	return ac.notifyAdapter()
+}
+
+func (ac *AutoscalerController) notifyAdapter() error {
+	// TODO: 抽成变量
+	ns := "pixiu-system"
+
+	deployment, err := ac.client.AppsV1().Deployments(ns).Get(context.TODO(), controller.DesireConfigMapName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get prometheus-adapter: %v", err)
+	}
+	patchPayloadTemplate :=
+		`[{
+        "op": "%s",
+        "path": "/metadata/annotations",
+        "value": %s
+    }]`
+	op := "replace"
+	if len(deployment.Annotations) == 0 {
+		deployment.Annotations = map[string]string{}
+		op = "add"
+	}
+
+	deployment.Annotations["kubectl.kubernetes.io/restartedAt"] = metav1.Now().Format("2006-01-02T15:04:05Z")
+	raw, err := json.Marshal(deployment.Annotations)
+	if err != nil {
+		return err
+	}
+	patchPayload := fmt.Sprintf(patchPayloadTemplate, op, raw)
+	if _, err = ac.client.AppsV1().Deployments(ns).Patch(context.Background(), controller.DesireConfigMapName, types.JSONPatchType, []byte(patchPayload), metav1.PatchOptions{}); err != nil {
+		klog.Errorf("failed to patch deployment: %v", err)
+		return err
+	}
+
+	return err
 }
 
 // syncAutoscaler will sync the autoscaler with the given key.
@@ -210,6 +370,9 @@ func (ac *AutoscalerController) sync(d *appsv1.Deployment, hpaList []*autoscalin
 		ac.eventRecorder.Eventf(d, v1.EventTypeWarning, "FailedNewestHPA", fmt.Sprintf("Failed extract newest HPA %s/%s", d.GetNamespace(), d.GetName()))
 		return err
 	}
+	if ac.IsCustomMetricHPA(d) {
+		newHPA.Labels[controller.PrometheusCustomMetric] = "true"
+	}
 
 	if len(hpaList) == 0 {
 		// 新建
@@ -238,6 +401,43 @@ func (ac *AutoscalerController) sync(d *appsv1.Deployment, hpaList []*autoscalin
 			}
 		}
 		ac.eventRecorder.Eventf(newHPA, v1.EventTypeNormal, "UpdateHPA", fmt.Sprintf("Update HPA %s/%s success", newHPA.Namespace, newHPA.Name))
+	}
+
+	return ac.Notify(d)
+}
+
+func (ac *AutoscalerController) Notify(d *appsv1.Deployment) error {
+	if !ac.IsCustomMetricHPA(d) {
+		return nil
+	}
+
+	// TODO: 抽成变量
+	ns := "pixiu-system"
+	cm, err := ac.cmLister.ConfigMaps(ns).Get(controller.DesireConfigMapName)
+	if err != nil {
+		return err
+	}
+	patchPayloadTemplate :=
+		`[{
+        "op": "%s",
+        "path": "/metadata/annotations",
+        "value": %s
+    }]`
+	op := "replace"
+	if len(cm.Annotations) == 0 {
+		cm.Annotations = map[string]string{}
+		op = "add"
+	}
+
+	cm.Annotations[controller.NotifyAt] = time.Now().Format("2006-01-02T15:04:05Z")
+	raw, err := json.Marshal(cm.Annotations)
+	if err != nil {
+		return err
+	}
+	patchPayload := fmt.Sprintf(patchPayloadTemplate, op, raw)
+	if _, err = ac.client.CoreV1().ConfigMaps(ns).Patch(context.Background(), controller.DesireConfigMapName, types.JSONPatchType, []byte(patchPayload), metav1.PatchOptions{}); err != nil {
+		klog.Errorf("failed to patch configmap: %v", err)
+		return err
 	}
 
 	return nil
@@ -290,9 +490,24 @@ func (ac *AutoscalerController) enqueue(deployment *appsv1.Deployment) {
 	ac.queue.Add(key)
 }
 
+func (ac *AutoscalerController) enqueueCM(cm *corev1.ConfigMap) {
+	key, err := controller.KeyFunc(cm)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", cm, err))
+		return
+	}
+
+	ac.cmQueue.Add(key)
+}
+
 // worker runs a worker thread that just dequeues items, processes then, and marks them done.
 func (ac *AutoscalerController) worker() {
 	for ac.processNextWorkItem() {
+	}
+}
+
+func (ac *AutoscalerController) configMapWorker() {
+	for ac.processNextConfigMapWorkItem() {
 	}
 }
 
@@ -305,6 +520,18 @@ func (ac *AutoscalerController) processNextWorkItem() bool {
 
 	err := ac.syncHandler(key.(string))
 	ac.handleErr(err, key)
+	return true
+}
+
+func (ac *AutoscalerController) processNextConfigMapWorkItem() bool {
+	key, quit := ac.cmQueue.Get()
+	if quit {
+		return false
+	}
+	defer ac.cmQueue.Done(key)
+
+	err := ac.syncConfigMapHandler(key.(string))
+	ac.handleConfigMapErr(err, key)
 	return true
 }
 
@@ -323,6 +550,23 @@ func (ac *AutoscalerController) handleErr(err error, key interface{}) {
 	utilruntime.HandleError(err)
 	klog.V(0).Infof("Dropping HPA %q out of the queue: %v", key, err)
 	ac.queue.Forget(key)
+}
+
+func (ac *AutoscalerController) handleConfigMapErr(err error, key interface{}) {
+	if err == nil {
+		ac.cmQueue.Forget(key)
+		return
+	}
+
+	if ac.cmQueue.NumRequeues(key) < maxRetries {
+		klog.V(0).Infof("Error syncing HPA %v: %v", key, err)
+		ac.cmQueue.AddRateLimited(key)
+		return
+	}
+
+	utilruntime.HandleError(err)
+	klog.V(0).Infof("Dropping HPA %q out of the queue: %v", key, err)
+	ac.cmQueue.Forget(key)
 }
 
 // This functions just wrap Handler Deployment Events for improve the readability of codes
@@ -440,6 +684,45 @@ func (ac *AutoscalerController) deleteHPA(obj interface{}) {
 	}
 	klog.V(0).Infof("Deleting HPA %s/%s", hpa.Namespace, hpa.Name)
 	ac.enqueueDeployment(d)
+}
+
+func (ac *AutoscalerController) addConfigMap(obj interface{}) {
+	cm := obj.(*corev1.ConfigMap)
+	klog.V(4).InfoS("Adding configmap", "configmap", klog.KObj(cm))
+	ac.enqueueConfigMap(cm)
+}
+
+func (ac *AutoscalerController) updateConfigMap(old, cur interface{}) {
+	oldCM := old.(*corev1.ConfigMap)
+	curCM := cur.(*corev1.ConfigMap)
+
+	if oldCM.ResourceVersion == curCM.ResourceVersion {
+		return
+	}
+	//if reflect.DeepEqual(oldCM.Data[controller.ExternalRuleKey], curCM.Data[controller.ExternalRuleKey]) {
+	//	return
+	//}
+	//klog.V(4).InfoS("Updating configmap", "configmap", klog.KObj(oldCM))
+
+	ac.enqueueConfigMap(curCM)
+}
+
+func (ac *AutoscalerController) deleteConfigMap(obj interface{}) {
+	cm, ok := obj.(*corev1.ConfigMap)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
+			return
+		}
+		cm, ok = tombstone.Obj.(*corev1.ConfigMap)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a ConfigMap %#v", obj))
+			return
+		}
+	}
+	klog.V(4).InfoS("Adding configmap", "configmap", klog.KObj(cm))
+	ac.enqueueConfigMap(cm)
 }
 
 func (ac *AutoscalerController) resolveControllerRef(namespace string, controllerRef *metav1.OwnerReference) *appsv1.Deployment {

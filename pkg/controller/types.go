@@ -36,8 +36,8 @@ const (
 	memoryAverageUtilization     = "memory." + PixiuRootPrefix + PixiuSeparator + targetAverageUtilization
 	prometheusAverageUtilization = "prometheus." + PixiuRootPrefix + PixiuSeparator + targetAverageUtilization
 
-	// 指标来自 prometheus 时，需要指定指标名称
-	prometheusCustomMetric = PixiuRootPrefix + PixiuSeparator + "targetCustomMetric"
+	// PrometheusCustomMetric 指标来自 prometheus 时，需要指定指标名称
+	PrometheusCustomMetric = PixiuRootPrefix + PixiuSeparator + "targetCustomMetric"
 
 	// CPU, in cores. (500m = .5 cores)
 	// Memory, in bytes. (500Gi = 500GiB = 500 * 1024 * 1024 * 1024)
@@ -52,4 +52,39 @@ const (
 
 	Deployment              string = "Deployment"
 	HorizontalPodAutoscaler string = "HorizontalPodAutoscaler"
+
+	DesireConfigMapName string = "prometheus-adapter"
+	NotifyAt            string = PixiuRootPrefix + PixiuSeparator + "notifyAt"
 )
+
+type PrometheusAdapterConfig struct {
+	Rules         []Rule         `yaml:"rules"`
+	ExternalRules []ExternalRule `yaml:"externalRules"`
+}
+
+type Rule struct {
+	MetricsQuery string      `yaml:"metricsQuery"`
+	Name         RuleName    `yaml:"name"`
+	Resources    ResourceMap `yaml:"resources"`
+	SeriesQuery  string      `yaml:"seriesQuery"`
+}
+
+type ExternalRule struct {
+	MetricsQuery string      `yaml:"metricsQuery"`
+	Name         RuleName    `yaml:"name"`
+	Resources    ResourceMap `yaml:"resources"`
+	SeriesQuery  string      `yaml:"seriesQuery"`
+}
+
+type RuleName struct {
+	As      string `yaml:"as"`
+	Matches string `yaml:"matches"`
+}
+
+type ResourceMap struct {
+	Overrides map[string]ResourceOverride `yaml:"overrides"`
+}
+
+type ResourceOverride struct {
+	Resource string `yaml:"resource"`
+}
