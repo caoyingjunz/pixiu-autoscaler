@@ -246,6 +246,7 @@ func (ac *AutoscalerController) syncConfigMaps(key string) error {
 		})
 	}
 
+	// TODO
 	fmt.Println("externalRules", externalRules)
 
 	configMap, err := ac.cmLister.ConfigMaps(namespace).Get(name)
@@ -263,9 +264,41 @@ func (ac *AutoscalerController) syncConfigMaps(key string) error {
 		return nil
 	}
 
-	fmt.Println(",cm.Data", cm.Data)
+	return ac.notifyAdapter()
+}
 
-	return nil
+func (ac *AutoscalerController) notifyAdapter() error {
+	// TODO: 抽成变量
+	ns := "pixiu-system"
+
+	deployment, err := ac.client.AppsV1().Deployments(ns).Get(context.TODO(), controller.DesireConfigMapName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get prometheus-adapter: %v", err)
+	}
+	patchPayloadTemplate :=
+		`[{
+        "op": "%s",
+        "path": "/metadata/annotations",
+        "value": %s
+    }]`
+	op := "replace"
+	if len(deployment.Annotations) == 0 {
+		deployment.Annotations = map[string]string{}
+		op = "add"
+	}
+
+	deployment.Annotations["kubectl.kubernetes.io/restartedAt"] = metav1.Now().Format("2006-01-02T15:04:05Z")
+	raw, err := json.Marshal(deployment.Annotations)
+	if err != nil {
+		return err
+	}
+	patchPayload := fmt.Sprintf(patchPayloadTemplate, op, raw)
+	if _, err = ac.client.AppsV1().Deployments(ns).Patch(context.Background(), controller.DesireConfigMapName, types.JSONPatchType, []byte(patchPayload), metav1.PatchOptions{}); err != nil {
+		klog.Errorf("failed to patch deployment: %v", err)
+		return err
+	}
+
+	return err
 }
 
 // syncAutoscaler will sync the autoscaler with the given key.
