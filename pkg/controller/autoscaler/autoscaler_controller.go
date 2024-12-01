@@ -23,6 +23,7 @@ import (
 	"reflect"
 	"time"
 
+	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	"k8s.io/api/core/v1"
@@ -246,9 +247,6 @@ func (ac *AutoscalerController) syncConfigMaps(key string) error {
 		})
 	}
 
-	// TODO
-	fmt.Println("externalRules", externalRules)
-
 	configMap, err := ac.cmLister.ConfigMaps(namespace).Get(name)
 	if errors.IsNotFound(err) {
 		klog.V(2).InfoS("configmap has been deleted", "configmap", klog.KRef(namespace, name))
@@ -257,11 +255,34 @@ func (ac *AutoscalerController) syncConfigMaps(key string) error {
 	if err != nil {
 		return err
 	}
-
 	// 深拷贝，避免缓存被修改
 	cm := configMap.DeepCopy()
 	if cm.DeletionTimestamp != nil {
 		return nil
+	}
+
+	var cfg controller.PrometheusAdapterConfig
+	if err = yaml.Unmarshal([]byte(cm.Data["config.yaml"]), &cfg); err != nil {
+		klog.Errorf("Failed to unmarshal adapter configmap: %v", err)
+		return err
+	}
+
+	// 退出，如果 externalRules 配置未发生变化则直接退出
+	if reflect.DeepEqual(cfg.ExternalRules, externalRules) {
+		return nil
+	}
+
+	cfg.ExternalRules = externalRules
+	newConfig, err := yaml.Marshal(&cfg)
+	if err != nil {
+		klog.Errorf("Failed to marshal adapter config: %v", err)
+		return err
+	}
+
+	cm.Data["config.yaml"] = string(newConfig)
+	_, err = ac.client.CoreV1().ConfigMaps(cm.Namespace).Update(context.TODO(), cm, metav1.UpdateOptions{})
+	if err != nil {
+		return err
 	}
 
 	return ac.notifyAdapter()
