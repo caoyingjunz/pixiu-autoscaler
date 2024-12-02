@@ -299,17 +299,18 @@ func (ac *AutoscalerController) notifyAdapter() error {
 	patchPayloadTemplate :=
 		`[{
         "op": "%s",
-        "path": "/metadata/annotations",
+        "path": "/spec/template/metadata/annotations",
         "value": %s
     }]`
 	op := "replace"
-	if len(deployment.Annotations) == 0 {
-		deployment.Annotations = map[string]string{}
+	tplAnnotations := deployment.Spec.Template.Annotations
+	if len(tplAnnotations) == 0 {
+		tplAnnotations = map[string]string{}
 		op = "add"
 	}
 
-	deployment.Annotations["kubectl.kubernetes.io/restartedAt"] = metav1.Now().Format("2006-01-02T15:04:05Z")
-	raw, err := json.Marshal(deployment.Annotations)
+	tplAnnotations["deployment.pixiu.io/restartAt"] = metav1.Now().Format("2006-01-02T15:04:05Z")
+	raw, err := json.Marshal(tplAnnotations)
 	if err != nil {
 		return err
 	}
