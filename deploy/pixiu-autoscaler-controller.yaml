@@ -1,61 +1,66 @@
 apiVersion: v1
+kind: Namespace
+metadata:
+  name: pixiu-system
+---
+apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: pixiuautoscaler
-  namespace: kube-system
+  name: pixiu-autoscaler
+  namespace: pixiu-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: pixiuautoscaler
+  name: pixiu-autoscaler
 rules:
 - apiGroups:
   - "*"
   resources:
   - horizontalpodautoscalers
   - deployments
-  - statefulsets
+  - events
   - endpoints
   - leases
   - configmaps
   verbs:
   - get
-  - list
   - watch
   - create
   - delete
   - update
+  - list
   - patch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: pixiuautoscaler
+  name: pixiu-autoscaler
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: pixiuautoscaler
+  name: pixiu-autoscaler
 subjects:
 - kind: ServiceAccount
-  name: pixiuautoscaler
-  namespace: kube-system
+  name: pixiu-autoscaler
+  namespace: pixiu-system
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: pixiu-autoscaler-controller
-  namespace: kube-system
+  namespace: pixiu-system
   labels:
-    pixiu.hpa.controller: pixiu-autoscaler-controller
+    pixiu.hpa.controller: pixiu-autoscaler
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
-      pixiu.hpa.controller: pixiu-autoscaler-controller
+      pixiu.hpa.controller: pixiu-autoscaler
   template:
     metadata:
       labels:
-        pixiu.hpa.controller: pixiu-autoscaler-controller
+        pixiu.hpa.controller: pixiu-autoscaler
     spec:
       serviceAccountName: pixiuautoscaler
       affinity:
@@ -69,17 +74,17 @@ spec:
                 - key: pixiu.hpa.controller
                   operator: In
                   values:
-                  - pixiu-autoscaler-controller
+                  - pixiu-autoscaler
       containers:
       - name: pixiu-autoscaler-controller
-        image: jacky06/pixiu-autoscaler-controller
+        image: harbor.cloud.pixiuio.com/pixiuio/pixiu-autoscaler-controller:latest
         imagePullPolicy: IfNotPresent
+        command:
+        - pixiu-autoscaler-controller
         resources:
           requests:
             cpu: 100m
             memory: 90Mi
-        command: 
-        - pixiu-autoscaler-controller
         livenessProbe:
           failureThreshold: 8
           httpGet:
