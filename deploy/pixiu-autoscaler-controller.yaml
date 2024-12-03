@@ -69,7 +69,7 @@ spec:
                 - key: pixiu.hpa.controller
                   operator: In
                   values:
-                  - pixiu-autoscaler-controller
+                  - pixiu-autoscaler
       containers:
       - name: pixiu-autoscaler-controller
         image: harbor.cloud.pixiuio.com/pixiuio/pixiu-autoscaler-controller:latest
