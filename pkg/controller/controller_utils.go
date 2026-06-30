@@ -159,7 +159,7 @@ func computeHash(objectToWrite string) string {
 func getMetricTarget(metricName string) (string, string, error) {
 	metricTypeSlice := strings.Split(metricName, PixiuDot)
 	if len(metricTypeSlice) < 2 {
-		return "", "", fmt.Errorf("invalied metric item %s", metricName)
+		return "", "", fmt.Errorf("invalid metric item %s", metricName)
 	}
 	metricType := metricTypeSlice[0]
 	if metricType != cpu && metricType != memory && metricType != prometheus {
@@ -168,7 +168,7 @@ func getMetricTarget(metricName string) (string, string, error) {
 
 	metricTargetSlice := strings.Split(metricName, PixiuSeparator)
 	if len(metricTargetSlice) < 2 {
-		return "", "", fmt.Errorf("invalied metric item %s", metricName)
+		return "", "", fmt.Errorf("invalid metric item %s", metricName)
 	}
 
 	return metricType, metricTargetSlice[len(metricTargetSlice)-1], nil
